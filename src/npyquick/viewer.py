@@ -45,10 +45,13 @@ class ImageCanvas(FigureCanvas):
         self._endpoints = np.zeros((2, 2), dtype=float)
         self._dragging: int | None = None
         self._cs_line = self._ep0 = self._ep1 = None
+        # (x_px, y_px, xlim, ylim, inv_transform) captured at pan start
+        self._pan_start: tuple | None = None
 
         self.mpl_connect("button_press_event", self._on_press)
         self.mpl_connect("motion_notify_event", self._on_motion)
         self.mpl_connect("button_release_event", self._on_release)
+        self.mpl_connect("scroll_event", self._on_scroll)
 
     def load(self, data: np.ndarray) -> None:
         self._data = data.astype(float)
@@ -112,25 +115,92 @@ class ImageCanvas(FigureCanvas):
                 return i
         return None
 
-    def _on_press(self, ev) -> None:
-        if ev.inaxes is not self._ax or self._data is None or ev.button != 1:
-            return
-        self._dragging = self._hit(ev.xdata, ev.ydata)
-
-    def _on_motion(self, ev) -> None:
-        if self._dragging is None or ev.inaxes is not self._ax or self._data is None:
+    def _reset_zoom(self) -> None:
+        if self._data is None:
             return
         h, w = self._data.shape
-        x = float(np.clip(ev.xdata, 0, w - 1))
-        y = float(np.clip(ev.ydata, 0, h - 1))
-        self._endpoints[self._dragging] = [x, y]
-        self._sync_artists()
-        self._refresh_profile()
+        self._ax.set_xlim(-0.5, w - 0.5)
+        self._ax.set_ylim(h - 0.5, -0.5)
         self.draw_idle()
-        self._on_status(f"Endpoint {self._dragging + 1}  x={x:.1f}  y={y:.1f}")
+
+    def _on_scroll(self, ev) -> None:
+        if ev.inaxes is not self._ax or self._data is None:
+            return
+        factor = 0.8 if ev.step > 0 else 1.25
+        xc, yc = ev.xdata, ev.ydata
+        xl = list(self._ax.get_xlim())
+        yl = list(self._ax.get_ylim())
+        xl = [xc + (xl[0] - xc) * factor, xc + (xl[1] - xc) * factor]
+        yl = [yc + (yl[0] - yc) * factor, yc + (yl[1] - yc) * factor]
+        h, w = self._data.shape
+        # xl: left ≤ right; yl: inverted (yl[0] > yl[1]) with origin='upper'
+        xl[0] = max(xl[0], -0.5)
+        xl[1] = min(xl[1], w - 0.5)
+        yl[0] = min(yl[0], h - 0.5)   # bottom (larger value)
+        yl[1] = max(yl[1], -0.5)       # top (smaller value)
+        if xl[0] >= xl[1] or yl[1] >= yl[0]:
+            self._reset_zoom()
+            return
+        self._ax.set_xlim(xl)
+        self._ax.set_ylim(yl)
+        self.draw_idle()
+
+    def _on_press(self, ev) -> None:
+        if ev.inaxes is not self._ax or self._data is None:
+            return
+        if ev.button == 1:
+            if ev.dblclick:
+                self._reset_zoom()
+            else:
+                self._dragging = self._hit(ev.xdata, ev.ydata)
+                if self._dragging is None:
+                    self._pan_start = (
+                        ev.x, ev.y,
+                        list(self._ax.get_xlim()),
+                        list(self._ax.get_ylim()),
+                        self._ax.transData.inverted(),
+                    )
+
+    def _on_motion(self, ev) -> None:
+        if self._data is None:
+            return
+        if self._dragging is not None:
+            if ev.inaxes is not self._ax:
+                return
+            h, w = self._data.shape
+            x = float(np.clip(ev.xdata, 0, w - 1))
+            y = float(np.clip(ev.ydata, 0, h - 1))
+            self._endpoints[self._dragging] = [x, y]
+            self._sync_artists()
+            self._refresh_profile()
+            self.draw_idle()
+            self._on_status(f"Endpoint {self._dragging + 1}  x={x:.1f}  y={y:.1f}")
+        elif self._pan_start is not None:
+            x0_px, y0_px, xlim0, ylim0, inv0 = self._pan_start
+            p0 = inv0.transform([x0_px, y0_px])
+            p1 = inv0.transform([ev.x, ev.y])
+            dx, dy = p1[0] - p0[0], p1[1] - p0[1]
+            h, w = self._data.shape
+            xl = [xlim0[0] - dx, xlim0[1] - dx]
+            yl = [ylim0[0] - dy, ylim0[1] - dy]
+            span_x = xl[1] - xl[0]
+            span_y = yl[0] - yl[1]  # positive (inverted axis)
+            if xl[0] < -0.5:
+                xl = [-0.5, -0.5 + span_x]
+            elif xl[1] > w - 0.5:
+                xl = [w - 0.5 - span_x, w - 0.5]
+            if yl[1] < -0.5:
+                yl = [-0.5 + span_y, -0.5]
+            elif yl[0] > h - 0.5:
+                yl = [h - 0.5, h - 0.5 - span_y]
+            self._ax.set_xlim(xl)
+            self._ax.set_ylim(yl)
+            self.draw_idle()
 
     def _on_release(self, ev) -> None:
-        self._dragging = None
+        if ev.button == 1:
+            self._dragging = None
+            self._pan_start = None
 
 
 class MainWindow(QMainWindow):
