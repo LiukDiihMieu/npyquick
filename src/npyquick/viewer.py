@@ -4,8 +4,8 @@ import numpy as np
 from scipy import ndimage
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QAction
+from PySide6.QtCore import Qt, QUrl
+from PySide6.QtGui import QAction, QDragEnterEvent, QDropEvent
 from PySide6.QtWidgets import QFileDialog, QMainWindow, QSplitter, QStatusBar
 
 
@@ -208,6 +208,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("npyquick")
         self.resize(1300, 700)
+        self.setAcceptDrops(True)
         self._sb = QStatusBar()
         self.setStatusBar(self._sb)
         self._build_menu()
@@ -234,6 +235,15 @@ class MainWindow(QMainWindow):
         sp.addWidget(self._profile)
         sp.setSizes([780, 480])
         self.setCentralWidget(sp)
+
+    def dragEnterEvent(self, ev: QDragEnterEvent) -> None:
+        urls = ev.mimeData().urls()
+        if urls and all(QUrl.toLocalFile(u).endswith(".npy") for u in urls):
+            ev.acceptProposedAction()
+
+    def dropEvent(self, ev: QDropEvent) -> None:
+        path = QUrl.toLocalFile(ev.mimeData().urls()[0])
+        self.load_file(path)
 
     def open_file(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
