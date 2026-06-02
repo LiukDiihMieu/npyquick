@@ -138,10 +138,10 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("npyquick")
         self.resize(1300, 700)
-        self._build_menu()
-        self._build_central()
         self._sb = QStatusBar()
         self.setStatusBar(self._sb)
+        self._build_menu()
+        self._build_central()
         self._sb.showMessage("File › Open  (Ctrl+O)  to load a .npy file.")
 
     def _build_menu(self) -> None:
