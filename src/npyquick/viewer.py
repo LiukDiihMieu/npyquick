@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import os
 import numpy as np
 from scipy import ndimage
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
-from PySide6.QtCore import Qt, QUrl
+from PySide6.QtCore import Qt, QSettings, QUrl
 from PySide6.QtGui import QAction, QDragEnterEvent, QDropEvent
 from PySide6.QtWidgets import QFileDialog, QMainWindow, QSplitter, QStatusBar
 
@@ -209,6 +210,9 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("npyquick")
         self.resize(1300, 700)
         self.setAcceptDrops(True)
+        _s = QSettings("npyquick", "npyquick")
+        saved = _s.value("last_dir", os.path.expanduser("~"))
+        self._last_dir = saved if os.path.isdir(saved) else os.path.expanduser("~")
         self._sb = QStatusBar()
         self.setStatusBar(self._sb)
         self._build_menu()
@@ -246,8 +250,9 @@ class MainWindow(QMainWindow):
         self.load_file(path)
 
     def open_file(self) -> None:
+        start = self._last_dir if os.path.isdir(self._last_dir) else os.path.expanduser("~")
         path, _ = QFileDialog.getOpenFileName(
-            self, "Open NPY File", "", "NumPy files (*.npy);;All files (*)"
+            self, "Open NPY File", start, "NumPy files (*.npy);;All files (*)"
         )
         if path:
             self.load_file(path)
@@ -263,6 +268,8 @@ class MainWindow(QMainWindow):
                 f"Expected 2D array, got shape {data.shape}. Only 2D grayscale is supported."
             )
             return
+        self._last_dir = os.path.dirname(os.path.abspath(path))
+        QSettings("npyquick", "npyquick").setValue("last_dir", self._last_dir)
         self.setWindowTitle(f"npyquick — {path}")
         self._image.load(data)
         h, w = data.shape
