@@ -5,7 +5,9 @@ from scipy import ndimage
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QSplitter, QVBoxLayout
+from PySide6.QtWidgets import (
+    QHBoxLayout, QLabel, QLineEdit, QPushButton, QSplitter, QVBoxLayout, QWidget,
+)
 
 from .base import BaseView
 
@@ -47,6 +49,8 @@ class ImageCanvas(FigureCanvas):
         self._cs_line = self._ep0 = self._ep1 = None
         self._pan_start: tuple | None = None
         self._hover: tuple[int, int] | None = None
+        self._im = None
+        self._colormap: str = "gray"
 
         self.mpl_connect("button_press_event", self._on_press)
         self.mpl_connect("motion_notify_event", self._on_motion)
@@ -59,8 +63,8 @@ class ImageCanvas(FigureCanvas):
         h, w = data.shape
         self._fig.clear()
         self._ax = self._fig.add_subplot(111)
-        im = self._ax.imshow(self._data, cmap="gray", origin="upper", interpolation="nearest")
-        self._fig.colorbar(im, ax=self._ax, fraction=0.046, pad=0.04)
+        self._im = self._ax.imshow(self._data, cmap=self._colormap, origin="upper", interpolation="nearest")
+        self._fig.colorbar(self._im, ax=self._ax, fraction=0.046, pad=0.04)
         self._endpoints = np.array([[w * 0.1, h * 0.5], [w * 0.9, h * 0.5]], dtype=float)
         self._cs_line = self._ep0 = self._ep1 = None
         self._hover = None
@@ -230,6 +234,22 @@ class ImageCanvas(FigureCanvas):
             self._dragging = None
             self._pan_start = None
 
+    def set_colormap(self, name: str) -> None:
+        self._colormap = name
+        if self._im is not None:
+            self._im.set_cmap(name)
+            self.draw_idle()
+
+    def set_clim(self, vmin: float | None, vmax: float | None) -> None:
+        if self._im is not None:
+            self._im.set_clim(vmin, vmax)
+            self.draw_idle()
+
+    def reset_clim(self) -> None:
+        if self._im is not None and self._data is not None:
+            self._im.set_clim(self._data.min(), self._data.max())
+            self.draw_idle()
+
 
 class ImageView(BaseView):
     VIEW_ID = "image"
@@ -239,12 +259,42 @@ class ImageView(BaseView):
         super().__init__()
         self._profile = ProfileCanvas()
         self._canvas = ImageCanvas(self._profile, on_status)
+
         sp = QSplitter(Qt.Horizontal)
         sp.addWidget(self._canvas)
         sp.addWidget(self._profile)
         sp.setSizes([780, 480])
+
+        self._vmin_edit = QLineEdit()
+        self._vmax_edit = QLineEdit()
+        self._vmin_edit.setPlaceholderText("vmin")
+        self._vmax_edit.setPlaceholderText("vmax")
+        self._vmin_edit.setFixedWidth(90)
+        self._vmax_edit.setFixedWidth(90)
+        apply_btn = QPushButton("Apply")
+        apply_btn.setFixedWidth(60)
+        reset_btn = QPushButton("Reset")
+        reset_btn.setFixedWidth(60)
+        self._vmin_edit.returnPressed.connect(self._apply_clim)
+        self._vmax_edit.returnPressed.connect(self._apply_clim)
+        apply_btn.clicked.connect(self._apply_clim)
+        reset_btn.clicked.connect(self._reset_clim)
+
+        ctrl = QWidget()
+        ctrl_layout = QHBoxLayout(ctrl)
+        ctrl_layout.setContentsMargins(6, 2, 6, 2)
+        ctrl_layout.addWidget(QLabel("vmin:"))
+        ctrl_layout.addWidget(self._vmin_edit)
+        ctrl_layout.addWidget(QLabel("vmax:"))
+        ctrl_layout.addWidget(self._vmax_edit)
+        ctrl_layout.addWidget(apply_btn)
+        ctrl_layout.addWidget(reset_btn)
+        ctrl_layout.addStretch()
+
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        layout.addWidget(ctrl)
         layout.addWidget(sp)
 
     @classmethod
@@ -253,6 +303,24 @@ class ImageView(BaseView):
 
     def set_data(self, array: np.ndarray) -> None:
         self._canvas.load(array)
+        self._vmin_edit.clear()
+        self._vmax_edit.clear()
+
+    def set_colormap(self, name: str) -> None:
+        self._canvas.set_colormap(name)
+
+    def _apply_clim(self) -> None:
+        try:
+            vmin = float(self._vmin_edit.text()) if self._vmin_edit.text() else None
+            vmax = float(self._vmax_edit.text()) if self._vmax_edit.text() else None
+            self._canvas.set_clim(vmin, vmax)
+        except ValueError:
+            pass
+
+    def _reset_clim(self) -> None:
+        self._vmin_edit.clear()
+        self._vmax_edit.clear()
+        self._canvas.reset_clim()
 
     def idle_status(self) -> str:
         return self._canvas.status_str()

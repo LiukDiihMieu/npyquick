@@ -4,7 +4,7 @@ import os
 
 import numpy as np
 from PySide6.QtCore import QSettings, QUrl
-from PySide6.QtGui import QAction
+from PySide6.QtGui import QAction, QActionGroup
 from PySide6.QtWidgets import (
     QFileDialog,
     QMainWindow,
@@ -54,6 +54,29 @@ class MainWindow(QMainWindow):
         quit_a.setShortcut("Ctrl+Q")
         quit_a.triggered.connect(self.close)
         fm.addAction(quit_a)
+
+        vm = self.menuBar().addMenu("&View")
+        cmap_menu = vm.addMenu("Colormap")
+        colormaps = [
+            ("gray", "Gray"),
+            ("viridis", "Viridis"),
+            ("plasma", "Plasma"),
+            ("inferno", "Inferno"),
+            ("magma", "Magma"),
+            ("cividis", "Cividis"),
+            ("hot", "Hot"),
+            ("coolwarm", "Coolwarm"),
+            ("RdBu_r", "RdBu (diverging)"),
+            ("turbo", "Turbo"),
+        ]
+        group = QActionGroup(self)
+        group.setExclusive(True)
+        for name, label in colormaps:
+            a = QAction(label, self, checkable=True)
+            a.setChecked(name == "gray")
+            a.triggered.connect(lambda checked, n=name: self._image_view.set_colormap(n))
+            group.addAction(a)
+            cmap_menu.addAction(a)
 
     def _build_central(self) -> None:
         self._image_view = ImageView(self._sb.showMessage)
