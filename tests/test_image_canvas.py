@@ -41,15 +41,15 @@ def test_pixel_size_propagates_to_profile():
     iv = ImageView(_silent_status)
     iv.set_data(np.zeros((10, 10), dtype=np.float32))
     iv.set_pixel_size(0.5, "mm")
-    assert iv._canvas._profile._pixel_size == 0.5
-    assert iv._canvas._profile._unit == "mm"
+    assert iv._canvas._profile._transform.pixel_size == 0.5
+    assert iv._canvas._profile._transform.unit == "mm"
 
 
 def test_set_pixel_size_before_data_is_safe():
     iv = ImageView(_silent_status)
     # no data loaded yet
     iv.set_pixel_size(2.0, "μm")
-    assert iv._canvas._pixel_size == 2.0
+    assert iv._canvas._transform.pixel_size == 2.0
     # subsequent load uses the new pixel_size
     iv.set_data(np.zeros((10, 20), dtype=np.float32))
     h, w = 10, 20

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import numpy as np
-from scipy import ndimage
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from PySide6.QtCore import Qt
@@ -9,11 +8,9 @@ from PySide6.QtWidgets import (
     QHBoxLayout, QLabel, QLineEdit, QPushButton, QSplitter, QVBoxLayout, QWidget,
 )
 
+from ..core.coord import PixelTransform
+from ..core.profile import compute_profile
 from .base import BaseView, ColormappedView, SpatialView
-
-
-def _fmt_unit(unit: str) -> str:
-    return "" if unit == "None" else unit
 
 
 class ProfileCanvas(FigureCanvas):
@@ -21,13 +18,12 @@ class ProfileCanvas(FigureCanvas):
         fig = Figure(constrained_layout=True)
         self._ax = fig.add_subplot(111)
         super().__init__(fig)
-        self._pixel_size: float = 1.0
-        self._unit: str = "None"
+        self._transform = PixelTransform()
         self._setup_axes()
         self._lines: list = []
 
     def _setup_axes(self) -> None:
-        u = _fmt_unit(self._unit) if hasattr(self, "_unit") else "px"
+        u = self._transform.format_unit()
         label = f"Distance ({u})" if u else "Distance"
         self._ax.set_xlabel(label)
         self._ax.set_ylabel("Intensity")
@@ -35,9 +31,11 @@ class ProfileCanvas(FigureCanvas):
         self._ax.grid(True, alpha=0.3)
 
     def set_pixel_size(self, ps: float, unit: str) -> None:
-        self._pixel_size = ps
-        self._unit = unit
-        u = _fmt_unit(unit)
+        new_t = PixelTransform(ps, unit)
+        if new_t == self._transform:
+            return
+        self._transform = new_t
+        u = new_t.format_unit()
         self._ax.set_xlabel(f"Distance ({u})" if u else "Distance")
         self.draw_idle()
 
@@ -45,7 +43,7 @@ class ProfileCanvas(FigureCanvas):
         # values: shape (N,) for grayscale, (C, N) for RGB
         is_rgb = values.ndim == 2
         n_ch = values.shape[0] if is_rgb else 1
-        dists = distances * self._pixel_size
+        dists = distances * self._transform.pixel_size
 
         if n_ch != len(self._lines):
             self._ax.cla()
@@ -91,8 +89,7 @@ class ImageCanvas(FigureCanvas):
         self._hover: tuple[int, int] | None = None
         self._im = None
         self._colormap: str = "gray"
-        self._pixel_size: float = 1.0
-        self._unit: str = "None"
+        self._transform = PixelTransform()
 
         self.mpl_connect("button_press_event", self._on_press)
         self.mpl_connect("motion_notify_event", self._on_motion)
@@ -100,38 +97,32 @@ class ImageCanvas(FigureCanvas):
         self.mpl_connect("scroll_event", self._on_scroll)
         self.mpl_connect("axes_leave_event", self._on_axes_leave)
 
-    def _extent(self, h: int, w: int) -> list[float]:
-        ps = self._pixel_size
-        return [-0.5 * ps, (w - 0.5) * ps, (h - 0.5) * ps, -0.5 * ps]
-
     def load(self, data: np.ndarray) -> None:
         self._data = data
         self._rgb = data.ndim == 3
         self._fig.clear()
         self._ax = self._fig.add_subplot(111)
 
+        h, w = data.shape[:2]
+        extent = self._transform.extent(h, w)
         if self._rgb:
-            h, w = data.shape[:2]
             display = self._to_display_rgb(data)
             self._im = self._ax.imshow(
-                display, origin="upper", interpolation="nearest",
-                extent=self._extent(h, w),
+                display, origin="upper", interpolation="nearest", extent=extent,
             )
         else:
-            h, w = data.shape
             self._im = self._ax.imshow(
                 data.astype(float), cmap=self._colormap,
-                origin="upper", interpolation="nearest",
-                extent=self._extent(h, w),
+                origin="upper", interpolation="nearest", extent=extent,
             )
             self._fig.colorbar(self._im, ax=self._ax, fraction=0.046, pad=0.04)
 
-        u = _fmt_unit(self._unit)
+        u = self._transform.format_unit()
         self._ax.set_xlabel(u)
         self._ax.set_ylabel(u)
+        ps = self._transform.pixel_size
         self._endpoints = np.array(
-            [[w * 0.1 * self._pixel_size, h * 0.5 * self._pixel_size],
-             [w * 0.9 * self._pixel_size, h * 0.5 * self._pixel_size]],
+            [[w * 0.1 * ps, h * 0.5 * ps], [w * 0.9 * ps, h * 0.5 * ps]],
             dtype=float,
         )
         self._cs_line = self._ep0 = self._ep1 = None
@@ -151,8 +142,8 @@ class ImageCanvas(FigureCanvas):
 
     def status_str(self) -> str:
         parts = []
-        ps = self._pixel_size
-        u = _fmt_unit(self._unit)
+        ps = self._transform.pixel_size
+        u = self._transform.format_unit()
         if self._hover is not None and self._data is not None:
             x, y = self._hover
             xp, yp = x * ps, y * ps
@@ -197,27 +188,9 @@ class ImageCanvas(FigureCanvas):
     def _refresh_profile(self) -> None:
         if self._data is None:
             return
-        ps = self._pixel_size
-        p0, p1 = self._endpoints / ps   # back to pixel coords for sampling
-        diff = p1 - p0
-        n = max(2, int(np.hypot(*diff)) + 1)
-        h, w = self._data.shape[:2]
-        xs = np.clip(np.linspace(p0[0], p1[0], n), 0, w - 1)
-        ys = np.clip(np.linspace(p0[1], p1[1], n), 0, h - 1)
-        dists = np.linspace(0.0, float(np.hypot(*diff)), n)  # in pixels; ProfileCanvas scales
-
-        if self._rgb:
-            n_ch = min(self._data.shape[2], 3)
-            values = np.stack([
-                ndimage.map_coordinates(
-                    self._data[:, :, c].astype(float), [ys, xs], order=1
-                )
-                for c in range(n_ch)
-            ])
-            self._profile.set_profile(dists, values)
-        else:
-            profile = ndimage.map_coordinates(self._data.astype(float), [ys, xs], order=1)
-            self._profile.set_profile(dists, profile)
+        p0_px, p1_px = self._transform.to_pixel(self._endpoints)
+        dists, values = compute_profile(self._data, p0_px, p1_px)
+        self._profile.set_profile(dists, values)
 
     # ------------------------------------------------------------------
     # Mouse interaction
@@ -233,10 +206,10 @@ class ImageCanvas(FigureCanvas):
     def _reset_zoom(self) -> None:
         if self._data is None:
             return
-        ps = self._pixel_size
         h, w = self._data.shape[:2]
-        self._ax.set_xlim(-0.5 * ps, (w - 0.5) * ps)
-        self._ax.set_ylim((h - 0.5) * ps, -0.5 * ps)
+        x0, x1, y0_bot, y1_top = self._transform.extent(h, w)
+        self._ax.set_xlim(x0, x1)
+        self._ax.set_ylim(y0_bot, y1_top)
         self.draw_idle()
 
     def _on_axes_leave(self, ev) -> None:
@@ -252,12 +225,12 @@ class ImageCanvas(FigureCanvas):
         yl = list(self._ax.get_ylim())
         xl = [xc + (xl[0] - xc) * factor, xc + (xl[1] - xc) * factor]
         yl = [yc + (yl[0] - yc) * factor, yc + (yl[1] - yc) * factor]
-        ps = self._pixel_size
         h, w = self._data.shape[:2]
-        xl[0] = max(xl[0], -0.5 * ps)
-        xl[1] = min(xl[1], (w - 0.5) * ps)
-        yl[0] = min(yl[0], (h - 0.5) * ps)
-        yl[1] = max(yl[1], -0.5 * ps)
+        x_min, x_max, y_bot, y_top = self._transform.extent(h, w)
+        xl[0] = max(xl[0], x_min)
+        xl[1] = min(xl[1], x_max)
+        yl[0] = min(yl[0], y_bot)
+        yl[1] = max(yl[1], y_top)
         if xl[0] >= xl[1] or yl[1] >= yl[0]:
             self._reset_zoom()
             return
@@ -285,12 +258,13 @@ class ImageCanvas(FigureCanvas):
         if self._data is None:
             return
 
-        ps = self._pixel_size
+        t = self._transform
+        h, w = self._data.shape[:2]
         if ev.inaxes is self._ax:
-            h, w = self._data.shape[:2]
+            xp, yp = t.to_pixel([ev.xdata, ev.ydata])
             self._hover = (
-                int(round(np.clip(ev.xdata / ps, 0, w - 1))),
-                int(round(np.clip(ev.ydata / ps, 0, h - 1))),
+                int(round(np.clip(xp, 0, w - 1))),
+                int(round(np.clip(yp, 0, h - 1))),
             )
         else:
             self._hover = None
@@ -298,9 +272,8 @@ class ImageCanvas(FigureCanvas):
         if self._dragging is not None:
             if ev.inaxes is not self._ax:
                 return
-            h, w = self._data.shape[:2]
-            x = float(np.clip(ev.xdata, -0.5 * ps, (w - 0.5) * ps))
-            y = float(np.clip(ev.ydata, -0.5 * ps, (h - 0.5) * ps))
+            x = t.clamp_x_physical(ev.xdata, w)
+            y = t.clamp_y_physical(ev.ydata, h)
             self._endpoints[self._dragging] = [x, y]
             self._sync_artists()
             self._refresh_profile()
@@ -310,19 +283,19 @@ class ImageCanvas(FigureCanvas):
             p0 = inv0.transform([x0_px, y0_px])
             p1 = inv0.transform([ev.x, ev.y])
             dx, dy = p1[0] - p0[0], p1[1] - p0[1]
-            h, w = self._data.shape[:2]
+            x_min, x_max, y_bot, y_top = t.extent(h, w)
             xl = [xlim0[0] - dx, xlim0[1] - dx]
             yl = [ylim0[0] - dy, ylim0[1] - dy]
             span_x = xl[1] - xl[0]
             span_y = yl[0] - yl[1]
-            if xl[0] < -0.5 * ps:
-                xl = [-0.5 * ps, -0.5 * ps + span_x]
-            elif xl[1] > (w - 0.5) * ps:
-                xl = [(w - 0.5) * ps - span_x, (w - 0.5) * ps]
-            if yl[1] < -0.5 * ps:
-                yl = [-0.5 * ps + span_y, -0.5 * ps]
-            elif yl[0] > (h - 0.5) * ps:
-                yl = [(h - 0.5) * ps, (h - 0.5) * ps - span_y]
+            if xl[0] < x_min:
+                xl = [x_min, x_min + span_x]
+            elif xl[1] > x_max:
+                xl = [x_max - span_x, x_max]
+            if yl[1] < y_top:
+                yl = [y_top + span_y, y_top]
+            elif yl[0] > y_bot:
+                yl = [y_bot, y_bot - span_y]
             self._ax.set_xlim(xl)
             self._ax.set_ylim(yl)
             self.draw_idle()
@@ -335,27 +308,29 @@ class ImageCanvas(FigureCanvas):
             self._pan_start = None
 
     def set_pixel_size(self, ps: float, unit: str) -> None:
+        new_t = PixelTransform(ps, unit)
+        if new_t == self._transform:
+            return
+        old_t = self._transform
+        self._transform = new_t
+        self._profile.set_pixel_size(ps, unit)
         if self._data is None:
-            self._pixel_size = ps
-            self._unit = unit
-            self._profile.set_pixel_size(ps, unit)
             return
         h, w = self._data.shape[:2]
-        ratio = ps / self._pixel_size
-        self._pixel_size = ps
-        self._unit = unit
+        ratio = new_t.pixel_size / old_t.pixel_size
         self._endpoints *= ratio
-        self._im.set_extent(self._extent(h, w))
-        u = _fmt_unit(unit)
+        self._im.set_extent(new_t.extent(h, w))
+        u = new_t.format_unit()
         self._ax.set_xlabel(u)
         self._ax.set_ylabel(u)
-        self._profile.set_pixel_size(ps, unit)
         self._reset_zoom()
         self._sync_artists()
         self._refresh_profile()
         self.draw_idle()
 
     def set_colormap(self, name: str) -> None:
+        if name == self._colormap:
+            return
         self._colormap = name
         if self._im is not None and not self._rgb:
             self._im.set_cmap(name)
