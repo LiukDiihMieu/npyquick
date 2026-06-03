@@ -104,6 +104,13 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(container)
 
         self._set_tabs_enabled([])
+        # In main, Qt naturally ends on Table after startup (Image is disabled
+        # first, Qt auto-switches to Table, then Table is also disabled with
+        # nowhere else to go). In pcm, Compare is ALWAYS_ENABLED so Qt lands
+        # there instead. Force Table as current to match main's startup state.
+        table_index = next(i for i, v in enumerate(self._views) if v.VIEW_ID == "table")
+        self._tabs.setCurrentIndex(table_index)
+        self._stack.setCurrentIndex(table_index)
 
     # ------------------------------------------------------------------
     # Tab state
@@ -119,7 +126,7 @@ class MainWindow(QMainWindow):
         for i, v in enumerate(self._views):
             enabled = getattr(v, "ALWAYS_ENABLED", False) or v.VIEW_ID in compatible
             self._tabs.setTabEnabled(i, enabled)
-        # switch to first enabled tab
+        # switch to first compatible tab — identical to main branch behaviour
         for i, v in enumerate(self._views):
             if v.VIEW_ID in compatible:
                 self._tabs.setCurrentIndex(i)
@@ -152,6 +159,7 @@ class MainWindow(QMainWindow):
             if v.VIEW_ID in compatible:
                 v.set_data(array)
 
+        self._compare_view.receive_external_file(array, path)
         self._set_tabs_enabled(compatible)
 
         self._last_dir = os.path.dirname(os.path.abspath(path))

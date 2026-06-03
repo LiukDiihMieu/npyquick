@@ -5,7 +5,7 @@ import numpy as np
 from scipy import ndimage
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
-from PySide6.QtCore import Qt, QUrl
+from PySide6.QtCore import Qt, QSettings, QUrl
 from PySide6.QtWidgets import (
     QFileDialog, QHBoxLayout, QLabel, QLineEdit,
     QPushButton, QSplitter, QStackedWidget, QVBoxLayout, QWidget,
@@ -449,10 +449,13 @@ class DualImageView(BaseView):
     # ------------------------------------------------------------------
 
     def _open_dialog(self, slot: int) -> None:
+        s = QSettings("npyquick", "npyquick")
+        start = s.value("last_dir", os.path.expanduser("~"))
         path, _ = QFileDialog.getOpenFileName(
-            self, f"Open Image {slot}", "", "NumPy files (*.npy)"
+            self, f"Open Image {slot}", start, "NumPy files (*.npy)"
         )
         if path:
+            s.setValue("last_dir", os.path.dirname(os.path.abspath(path)))
             self._load_image(path, slot)
 
     def _load_image(self, path: str, slot: int) -> None:
@@ -623,6 +626,23 @@ class DualImageView(BaseView):
 
     def set_data(self, array: np.ndarray) -> None:
         pass
+
+    def receive_external_file(self, array: np.ndarray, path: str) -> None:
+        if array.ndim != 2 or not np.issubdtype(array.dtype, np.number):
+            return
+        self._img1 = array
+        self._img2 = None
+        self._img2_label.setText("—")
+        self._align_btn.setEnabled(False)
+        self._diff_btn.setEnabled(False)
+        self._diff_btn.setChecked(False)
+        self._diff_mode = False
+        self._mid_stack.setCurrentIndex(0)
+        self._diff_clim_widget.setVisible(False)
+        self._img1_label.setText(os.path.basename(path))
+        vmin, vmax = self._compute_img_clim()
+        self._canvas1.load(self._img1, vmin=vmin, vmax=vmax)
+        self._refresh_profile()
 
     def idle_status(self) -> str:
         return "Compare — open two .npy files of the same shape"
