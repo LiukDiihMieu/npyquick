@@ -341,9 +341,7 @@ class ImageCanvas(FigureCanvas):
             self._profile.set_pixel_size(ps, unit)
             return
         h, w = self._data.shape[:2]
-        old_ext = self._im.get_extent()
-        old_ps = old_ext[1] / (w - 0.5) if w > 1 else 1.0
-        ratio = ps / old_ps if old_ps != 0 else 1.0
+        ratio = ps / self._pixel_size
         self._pixel_size = ps
         self._unit = unit
         self._endpoints *= ratio

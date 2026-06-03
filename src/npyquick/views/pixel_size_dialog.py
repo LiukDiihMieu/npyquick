@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import ast
 import math
+import operator
 
 from PySide6.QtCore import QSettings
 from PySide6.QtWidgets import (
@@ -17,15 +19,46 @@ UNITS = ["px", "nm", "μm", "mm", "cm", "m", "km", "in", "ft", "yd", "mi", "None
 _SETTINGS_KEY = "pixel_size_history"
 _MAX_HISTORY = 5
 
-_SAFE_NS = {k: getattr(math, k) for k in dir(math) if not k.startswith("_")}
+_BINOPS = {
+    ast.Add: operator.add,
+    ast.Sub: operator.sub,
+    ast.Mult: operator.mul,
+    ast.Div: operator.truediv,
+    ast.FloorDiv: operator.floordiv,
+    ast.Mod: operator.mod,
+    ast.Pow: operator.pow,
+}
+_UNARYOPS = {ast.UAdd: operator.pos, ast.USub: operator.neg}
+
+
+def _arith(node):
+    if isinstance(node, ast.Expression):
+        return _arith(node.body)
+    if isinstance(node, ast.Constant):
+        if isinstance(node.value, (int, float)) and not isinstance(node.value, bool):
+            return node.value
+        raise ValueError(f"unsupported constant: {node.value!r}")
+    if isinstance(node, ast.BinOp):
+        op = _BINOPS.get(type(node.op))
+        if op is None:
+            raise ValueError(f"operator {type(node.op).__name__} not allowed")
+        return op(_arith(node.left), _arith(node.right))
+    if isinstance(node, ast.UnaryOp):
+        op = _UNARYOPS.get(type(node.op))
+        if op is None:
+            raise ValueError(f"operator {type(node.op).__name__} not allowed")
+        return op(_arith(node.operand))
+    raise ValueError("only arithmetic expressions are allowed")
 
 
 def _eval_expr(text: str) -> float:
     text = text.strip()
     if not text:
         raise ValueError("empty expression")
-    result = eval(text, {"__builtins__": {}}, _SAFE_NS)  # noqa: S307
-    result = float(result)
+    tree = ast.parse(text, mode="eval")
+    result = float(_arith(tree))
+    if not math.isfinite(result):
+        raise ValueError("pixel size must be finite")
     if result <= 0:
         raise ValueError("pixel size must be positive")
     return result
