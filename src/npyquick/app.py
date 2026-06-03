@@ -152,7 +152,7 @@ class MainWindow(QMainWindow):
             return
 
         array = self._model.array
-        compatible = self._model.compatible_views()
+        compatible = [v.VIEW_ID for v in self._views if v.can_handle(array)]
 
         for v in self._views:
             if v.VIEW_ID in compatible:
