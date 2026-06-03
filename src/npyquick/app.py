@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
 )
 
 from .model import NpyDataModel
+from .views.base import ColormappedView, SpatialView
 from .views.image import ImageView
 from .views.pixel_size_dialog import PixelSizeDialog
 from .views.table import RawTableView
@@ -36,6 +37,7 @@ class MainWindow(QMainWindow):
         self._pixel_size: float = 1.0
         self._pixel_unit: str = "None"
         self._pixel_expr: str = "1"
+        self._colormap: str = "gray"
         self._sb = QStatusBar()
         self.setStatusBar(self._sb)
 
@@ -82,7 +84,7 @@ class MainWindow(QMainWindow):
         for name, label in colormaps:
             a = QAction(label, self, checkable=True)
             a.setChecked(name == "gray")
-            a.triggered.connect(lambda checked, n=name: self._image_view.set_colormap(n))
+            a.triggered.connect(lambda checked, n=name: self._apply_colormap(n))
             group.addAction(a)
             cmap_menu.addAction(a)
 
@@ -159,6 +161,7 @@ class MainWindow(QMainWindow):
                 v.set_data(array)
 
         self._apply_pixel_size()
+        self._apply_colormap(self._colormap)
         self._set_tabs_enabled(compatible)
 
         self._last_dir = os.path.dirname(os.path.abspath(path))
@@ -175,7 +178,15 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
 
     def _apply_pixel_size(self) -> None:
-        self._image_view.set_pixel_size(self._pixel_size, self._pixel_unit)
+        for v in self._views:
+            if isinstance(v, SpatialView):
+                v.set_pixel_size(self._pixel_size, self._pixel_unit)
+
+    def _apply_colormap(self, name: str) -> None:
+        self._colormap = name
+        for v in self._views:
+            if isinstance(v, ColormappedView):
+                v.set_colormap(name)
 
     def _open_pixel_size_dialog(self) -> None:
         dlg = PixelSizeDialog(self._pixel_expr, self._pixel_unit, parent=self)

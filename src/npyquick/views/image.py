@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout, QLabel, QLineEdit, QPushButton, QSplitter, QVBoxLayout, QWidget,
 )
 
-from .base import BaseView
+from .base import BaseView, ColormappedView, SpatialView
 
 
 def _fmt_unit(unit: str) -> str:
@@ -373,7 +373,7 @@ class ImageCanvas(FigureCanvas):
             self.draw_idle()
 
 
-class ImageView(BaseView):
+class ImageView(BaseView, SpatialView, ColormappedView):
     VIEW_ID = "image"
     VIEW_NAME = "Image"
 
