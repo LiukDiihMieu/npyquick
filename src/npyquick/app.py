@@ -16,8 +16,10 @@ from PySide6.QtWidgets import (
 )
 
 from .model import NpyDataModel
+from .views.base import ColormappedView, SpatialView
 from .views.dual_image import DualImageView
 from .views.image import ImageView
+from .views.pixel_size_dialog import PixelSizeDialog
 from .views.table import RawTableView
 
 
@@ -33,6 +35,10 @@ class MainWindow(QMainWindow):
         self._last_dir = saved if os.path.isdir(saved) else os.path.expanduser("~")
 
         self._model = NpyDataModel()
+        self._pixel_size: float = 1.0
+        self._pixel_unit: str = "None"
+        self._pixel_expr: str = "1"
+        self._colormap: str = "gray"
         self._sb = QStatusBar()
         self.setStatusBar(self._sb)
 
@@ -57,6 +63,10 @@ class MainWindow(QMainWindow):
         fm.addAction(quit_a)
 
         vm = self.menuBar().addMenu("&View")
+        px_action = QAction("Set Pixel Size…", self)
+        px_action.triggered.connect(self._open_pixel_size_dialog)
+        vm.addAction(px_action)
+        vm.addSeparator()
         cmap_menu = vm.addMenu("Colormap")
         colormaps = [
             ("gray", "Gray"),
@@ -75,7 +85,7 @@ class MainWindow(QMainWindow):
         for name, label in colormaps:
             a = QAction(label, self, checkable=True)
             a.setChecked(name == "gray")
-            a.triggered.connect(lambda checked, n=name: self._image_view.set_colormap(n))
+            a.triggered.connect(lambda checked, n=name: self._apply_colormap(n))
             group.addAction(a)
             cmap_menu.addAction(a)
 
@@ -104,11 +114,12 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(container)
 
         self._set_tabs_enabled([])
-        # In main, Qt naturally ends on Table after startup (Image is disabled
-        # first, Qt auto-switches to Table, then Table is also disabled with
-        # nowhere else to go). In pcm, Compare is ALWAYS_ENABLED so Qt lands
-        # there instead. Force Table as current to match main's startup state.
+        # At startup only Compare is enabled (ALWAYS_ENABLED). Qt won't
+        # honour setCurrentIndex to a disabled tab, so we explicitly enable
+        # Table first, then switch to it, giving the user a neutral landing
+        # point before any file is loaded.
         table_index = next(i for i, v in enumerate(self._views) if v.VIEW_ID == "table")
+        self._tabs.setTabEnabled(table_index, True)
         self._tabs.setCurrentIndex(table_index)
         self._stack.setCurrentIndex(table_index)
 
@@ -124,7 +135,7 @@ class MainWindow(QMainWindow):
 
     def _set_tabs_enabled(self, compatible: list[str]) -> None:
         for i, v in enumerate(self._views):
-            enabled = getattr(v, "ALWAYS_ENABLED", False) or v.VIEW_ID in compatible
+            enabled = v.ALWAYS_ENABLED or v.VIEW_ID in compatible
             self._tabs.setTabEnabled(i, enabled)
         # switch to first compatible tab — identical to main branch behaviour
         for i, v in enumerate(self._views):
@@ -153,13 +164,16 @@ class MainWindow(QMainWindow):
             return
 
         array = self._model.array
-        compatible = self._model.compatible_views()
+        compatible = [v.VIEW_ID for v in self._views if v.can_handle(array)]
 
         for v in self._views:
             if v.VIEW_ID in compatible:
                 v.set_data(array)
 
-        self._compare_view.receive_external_file(array, path)
+        for v in self._views:
+            v.on_primary_load(array, path)
+        self._apply_pixel_size()
+        self._apply_colormap(self._colormap)
         self._set_tabs_enabled(compatible)
 
         self._last_dir = os.path.dirname(os.path.abspath(path))
@@ -170,6 +184,29 @@ class MainWindow(QMainWindow):
             + (f"  |  range [{array.min():.4g}, {array.max():.4g}]"
                if np.issubdtype(array.dtype, np.number) else "")
         )
+
+    # ------------------------------------------------------------------
+    # Pixel size
+    # ------------------------------------------------------------------
+
+    def _apply_pixel_size(self) -> None:
+        for v in self._views:
+            if isinstance(v, SpatialView):
+                v.set_pixel_size(self._pixel_size, self._pixel_unit)
+
+    def _apply_colormap(self, name: str) -> None:
+        self._colormap = name
+        for v in self._views:
+            if isinstance(v, ColormappedView):
+                v.set_colormap(name)
+
+    def _open_pixel_size_dialog(self) -> None:
+        dlg = PixelSizeDialog(self._pixel_expr, self._pixel_unit, parent=self)
+        if dlg.exec():
+            self._pixel_size = dlg.result_value
+            self._pixel_unit = dlg.result_unit
+            self._pixel_expr = dlg.result_expr
+            self._apply_pixel_size()
 
     # ------------------------------------------------------------------
     # Drag and drop

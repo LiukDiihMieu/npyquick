@@ -11,7 +11,11 @@ from PySide6.QtWidgets import (
     QPushButton, QSplitter, QStackedWidget, QVBoxLayout, QWidget,
 )
 
-from .base import BaseView
+from .base import BaseView, ColormappedView, SpatialView
+
+
+def _fmt_unit(unit: str) -> str:
+    return "" if unit == "None" else unit
 
 
 class DualProfileCanvas(FigureCanvas):
@@ -19,15 +23,26 @@ class DualProfileCanvas(FigureCanvas):
         fig = Figure(constrained_layout=True)
         self._ax = fig.add_subplot(111)
         super().__init__(fig)
+        self._pixel_size: float = 1.0
+        self._unit: str = "None"
         self._setup_axes()
         self._lines: list = []
         self._n_profiles = 0
 
     def _setup_axes(self) -> None:
-        self._ax.set_xlabel("Distance (px)")
+        u = _fmt_unit(self._unit) if hasattr(self, "_unit") else ""
+        label = f"Distance ({u})" if u else "Distance"
+        self._ax.set_xlabel(label)
         self._ax.set_ylabel("Intensity")
         self._ax.set_title("Cross Section Profile")
         self._ax.grid(True, alpha=0.3)
+
+    def set_pixel_size(self, ps: float, unit: str) -> None:
+        self._pixel_size = ps
+        self._unit = unit
+        u = _fmt_unit(unit)
+        self._ax.set_xlabel(f"Distance ({u})" if u else "Distance")
+        self.draw_idle()
 
     def set_profiles(
         self,
@@ -41,14 +56,16 @@ class DualProfileCanvas(FigureCanvas):
             self._setup_axes()
             self._lines = []
             for (dists, vals), label, color in zip(profile_data, labels, colors):
-                (line,) = self._ax.plot(dists, vals, color=color, lw=1.5, label=label)
+                (line,) = self._ax.plot(
+                    dists * self._pixel_size, vals, color=color, lw=1.5, label=label
+                )
                 self._lines.append(line)
             if n > 1:
                 self._ax.legend(loc="upper right", fontsize=8)
             self._n_profiles = n
         else:
             for line, (dists, vals) in zip(self._lines, profile_data):
-                line.set_xdata(dists)
+                line.set_xdata(dists * self._pixel_size)
                 line.set_ydata(vals)
         self._ax.relim()
         self._ax.autoscale_view()
@@ -81,6 +98,8 @@ class DualImageCanvas(FigureCanvas):
         self._pan_start: tuple | None = None
         self._hover: tuple[int, int] | None = None
         self._im = None
+        self._pixel_size: float = 1.0
+        self._unit: str = "None"
 
         self.mpl_connect("button_press_event", self._on_press)
         self.mpl_connect("motion_notify_event", self._on_motion)
@@ -88,6 +107,10 @@ class DualImageCanvas(FigureCanvas):
         self.mpl_connect("scroll_event", self._on_scroll)
         self.mpl_connect("axes_leave_event", self._on_axes_leave)
         self.setAcceptDrops(on_drop is not None)
+
+    def _extent(self, h: int, w: int) -> list[float]:
+        ps = self._pixel_size
+        return [-0.5 * ps, (w - 0.5) * ps, (h - 0.5) * ps, -0.5 * ps]
 
     def load(
         self,
@@ -101,12 +124,19 @@ class DualImageCanvas(FigureCanvas):
         self._fig.clear()
         self._ax = self._fig.add_subplot(111)
         self._ax.set_title(self._label, fontsize=9)
+        u = _fmt_unit(self._unit)
+        self._ax.set_xlabel(u)
+        self._ax.set_ylabel(u)
         self._im = self._ax.imshow(
             self._data, cmap=cmap, vmin=vmin, vmax=vmax,
             origin="upper", interpolation="nearest",
+            extent=self._extent(h, w),
         )
         self._fig.colorbar(self._im, ax=self._ax, fraction=0.046, pad=0.04)
-        self._endpoints = np.array([[w * 0.1, h * 0.5], [w * 0.9, h * 0.5]], dtype=float)
+        ps = self._pixel_size
+        self._endpoints = np.array(
+            [[w * 0.1 * ps, h * 0.5 * ps], [w * 0.9 * ps, h * 0.5 * ps]], dtype=float
+        )
         self._cs_line = self._ep0 = self._ep1 = None
         self._hover = None
         self._init_artists()
@@ -126,27 +156,55 @@ class DualImageCanvas(FigureCanvas):
             self._im.set_clim(vmin, vmax)
             self.draw_idle()
 
+    def set_colormap(self, name: str) -> None:
+        if self._im is not None:
+            self._im.set_cmap(name)
+            self.draw_idle()
+
     def get_profile(self) -> tuple[np.ndarray, np.ndarray] | None:
         if self._data is None:
             return None
-        p0, p1 = self._endpoints
+        ps = self._pixel_size
+        p0, p1 = self._endpoints / ps   # physical → pixel for sampling
         diff = p1 - p0
         n = max(2, int(np.hypot(*diff)) + 1)
         h, w = self._data.shape
         xs = np.clip(np.linspace(p0[0], p1[0], n), 0, w - 1)
         ys = np.clip(np.linspace(p0[1], p1[1], n), 0, h - 1)
         profile = ndimage.map_coordinates(self._data, [ys, xs], order=1)
-        dists = np.linspace(0.0, float(np.hypot(*diff)), n)
+        dists = np.linspace(0.0, float(np.hypot(*diff)), n)  # pixel dist; ProfileCanvas scales
         return dists, profile
+
+    def set_pixel_size(self, ps: float, unit: str) -> None:
+        if self._data is None:
+            self._pixel_size = ps
+            self._unit = unit
+            return
+        h, w = self._data.shape
+        ratio = ps / self._pixel_size
+        self._pixel_size = ps
+        self._unit = unit
+        self._endpoints *= ratio
+        self._im.set_extent(self._extent(h, w))
+        u = _fmt_unit(unit)
+        self._ax.set_xlabel(u)
+        self._ax.set_ylabel(u)
+        self._reset_zoom()
+        if self._cs_line is not None:
+            self._sync_artists()
+        self.draw_idle()
 
     def status_str(self) -> str:
         parts = []
+        ps = self._pixel_size
+        u = _fmt_unit(self._unit)
         if self._hover is not None and self._data is not None:
             x, y = self._hover
-            parts.append(f"{self._label}  x={x}  y={y}  val={self._data[y, x]:.4g}")
+            xp, yp = x * ps, y * ps
+            parts.append(f"{self._label}  x={xp:.4g}{u}  y={yp:.4g}{u}  val={self._data[y, x]:.4g}")
         if self._data is not None:
             p0, p1 = self._endpoints
-            parts.append(f"EP1({p0[0]:.0f}, {p0[1]:.0f}) → EP2({p1[0]:.0f}, {p1[1]:.0f})")
+            parts.append(f"EP1({p0[0]:.4g}, {p0[1]:.4g}) → EP2({p1[0]:.4g}, {p1[1]:.4g})")
         return "  |  ".join(parts)
 
     # ------------------------------------------------------------------
@@ -186,9 +244,10 @@ class DualImageCanvas(FigureCanvas):
     def _reset_zoom(self) -> None:
         if self._data is None:
             return
+        ps = self._pixel_size
         h, w = self._data.shape
-        self._ax.set_xlim(-0.5, w - 0.5)
-        self._ax.set_ylim(h - 0.5, -0.5)
+        self._ax.set_xlim(-0.5 * ps, (w - 0.5) * ps)
+        self._ax.set_ylim((h - 0.5) * ps, -0.5 * ps)
         self.draw_idle()
 
     def _on_axes_leave(self, ev) -> None:
@@ -204,11 +263,12 @@ class DualImageCanvas(FigureCanvas):
         yl = list(self._ax.get_ylim())
         xl = [xc + (xl[0] - xc) * factor, xc + (xl[1] - xc) * factor]
         yl = [yc + (yl[0] - yc) * factor, yc + (yl[1] - yc) * factor]
+        ps = self._pixel_size
         h, w = self._data.shape
-        xl[0] = max(xl[0], -0.5)
-        xl[1] = min(xl[1], w - 0.5)
-        yl[0] = min(yl[0], h - 0.5)
-        yl[1] = max(yl[1], -0.5)
+        xl[0] = max(xl[0], -0.5 * ps)
+        xl[1] = min(xl[1], (w - 0.5) * ps)
+        yl[0] = min(yl[0], (h - 0.5) * ps)
+        yl[1] = max(yl[1], -0.5 * ps)
         if xl[0] >= xl[1] or yl[1] >= yl[0]:
             self._reset_zoom()
             return
@@ -235,11 +295,12 @@ class DualImageCanvas(FigureCanvas):
     def _on_motion(self, ev) -> None:
         if self._data is None:
             return
+        ps = self._pixel_size
         if ev.inaxes is self._ax:
             h, w = self._data.shape
             self._hover = (
-                int(round(np.clip(ev.xdata, 0, w - 1))),
-                int(round(np.clip(ev.ydata, 0, h - 1))),
+                int(round(np.clip(ev.xdata / ps, 0, w - 1))),
+                int(round(np.clip(ev.ydata / ps, 0, h - 1))),
             )
         else:
             self._hover = None
@@ -249,8 +310,8 @@ class DualImageCanvas(FigureCanvas):
                 self._on_status(self.status_str())
                 return
             h, w = self._data.shape
-            x = float(np.clip(ev.xdata, 0, w - 1))
-            y = float(np.clip(ev.ydata, 0, h - 1))
+            x = float(np.clip(ev.xdata, -0.5 * ps, (w - 0.5) * ps))
+            y = float(np.clip(ev.ydata, -0.5 * ps, (h - 0.5) * ps))
             self._endpoints[self._dragging] = [x, y]
             self._sync_artists()
             self.draw_idle()
@@ -266,14 +327,14 @@ class DualImageCanvas(FigureCanvas):
             yl = [ylim0[0] - dy, ylim0[1] - dy]
             span_x = xl[1] - xl[0]
             span_y = yl[0] - yl[1]
-            if xl[0] < -0.5:
-                xl = [-0.5, -0.5 + span_x]
-            elif xl[1] > w - 0.5:
-                xl = [w - 0.5 - span_x, w - 0.5]
-            if yl[1] < -0.5:
-                yl = [-0.5 + span_y, -0.5]
-            elif yl[0] > h - 0.5:
-                yl = [h - 0.5, h - 0.5 - span_y]
+            if xl[0] < -0.5 * ps:
+                xl = [-0.5 * ps, -0.5 * ps + span_x]
+            elif xl[1] > (w - 0.5) * ps:
+                xl = [(w - 0.5) * ps - span_x, (w - 0.5) * ps]
+            if yl[1] < -0.5 * ps:
+                yl = [-0.5 * ps + span_y, -0.5 * ps]
+            elif yl[0] > (h - 0.5) * ps:
+                yl = [(h - 0.5) * ps, (h - 0.5) * ps - span_y]
             self._ax.set_xlim(xl)
             self._ax.set_ylim(yl)
             self.draw_idle()
@@ -300,7 +361,7 @@ class DualImageCanvas(FigureCanvas):
             self._on_drop(path)
 
 
-class DualImageView(BaseView):
+class DualImageView(BaseView, SpatialView, ColormappedView):
     VIEW_ID = "compare"
     VIEW_NAME = "Compare"
     ALWAYS_ENABLED = True
@@ -311,6 +372,7 @@ class DualImageView(BaseView):
         self._img1: np.ndarray | None = None
         self._img2: np.ndarray | None = None
         self._diff_mode: bool = False
+        self._colormap: str = "gray"
 
         self._canvas1 = DualImageCanvas(
             "Img 1", on_status,
@@ -494,9 +556,9 @@ class DualImageView(BaseView):
         vmin, vmax = self._compute_img_clim()
 
         if self._img1 is not None:
-            self._canvas1.load(self._img1, vmin=vmin, vmax=vmax)
+            self._canvas1.load(self._img1, cmap=self._colormap, vmin=vmin, vmax=vmax)
         if self._img2 is not None:
-            self._canvas2.load(self._img2, vmin=vmin, vmax=vmax)
+            self._canvas2.load(self._img2, cmap=self._colormap, vmin=vmin, vmax=vmax)
 
         self._align_btn.setEnabled(both)
         self._diff_btn.setEnabled(both)
@@ -627,7 +689,7 @@ class DualImageView(BaseView):
     def set_data(self, array: np.ndarray) -> None:
         pass
 
-    def receive_external_file(self, array: np.ndarray, path: str) -> None:
+    def on_primary_load(self, array: np.ndarray, path: str) -> None:
         if array.ndim != 2 or not np.issubdtype(array.dtype, np.number):
             return
         self._img1 = array
@@ -641,8 +703,19 @@ class DualImageView(BaseView):
         self._diff_clim_widget.setVisible(False)
         self._img1_label.setText(os.path.basename(path))
         vmin, vmax = self._compute_img_clim()
-        self._canvas1.load(self._img1, vmin=vmin, vmax=vmax)
+        self._canvas1.load(self._img1, cmap=self._colormap, vmin=vmin, vmax=vmax)
         self._refresh_profile()
+
+    def set_colormap(self, name: str) -> None:
+        self._colormap = name
+        self._canvas1.set_colormap(name)
+        self._canvas2.set_colormap(name)
+
+    def set_pixel_size(self, ps: float, unit: str) -> None:
+        self._canvas1.set_pixel_size(ps, unit)
+        self._canvas2.set_pixel_size(ps, unit)
+        self._diff_canvas.set_pixel_size(ps, unit)
+        self._profile.set_pixel_size(ps, unit)
 
     def idle_status(self) -> str:
         return "Compare — open two .npy files of the same shape"
