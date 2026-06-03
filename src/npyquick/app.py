@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
 
 from .model import NpyDataModel
 from .views.image import ImageView
+from .views.pixel_size_dialog import PixelSizeDialog
 from .views.table import RawTableView
 
 
@@ -32,6 +33,9 @@ class MainWindow(QMainWindow):
         self._last_dir = saved if os.path.isdir(saved) else os.path.expanduser("~")
 
         self._model = NpyDataModel()
+        self._pixel_size: float = 1.0
+        self._pixel_unit: str = "None"
+        self._pixel_expr: str = "1"
         self._sb = QStatusBar()
         self.setStatusBar(self._sb)
 
@@ -56,6 +60,10 @@ class MainWindow(QMainWindow):
         fm.addAction(quit_a)
 
         vm = self.menuBar().addMenu("&View")
+        px_action = QAction("Set Pixel Size…", self)
+        px_action.triggered.connect(self._open_pixel_size_dialog)
+        vm.addAction(px_action)
+        vm.addSeparator()
         cmap_menu = vm.addMenu("Colormap")
         colormaps = [
             ("gray", "Gray"),
@@ -150,6 +158,7 @@ class MainWindow(QMainWindow):
             if v.VIEW_ID in compatible:
                 v.set_data(array)
 
+        self._apply_pixel_size()
         self._set_tabs_enabled(compatible)
 
         self._last_dir = os.path.dirname(os.path.abspath(path))
@@ -160,6 +169,21 @@ class MainWindow(QMainWindow):
             + (f"  |  range [{array.min():.4g}, {array.max():.4g}]"
                if np.issubdtype(array.dtype, np.number) else "")
         )
+
+    # ------------------------------------------------------------------
+    # Pixel size
+    # ------------------------------------------------------------------
+
+    def _apply_pixel_size(self) -> None:
+        self._image_view.set_pixel_size(self._pixel_size, self._pixel_unit)
+
+    def _open_pixel_size_dialog(self) -> None:
+        dlg = PixelSizeDialog(self._pixel_expr, self._pixel_unit, parent=self)
+        if dlg.exec():
+            self._pixel_size = dlg.result_value
+            self._pixel_unit = dlg.result_unit
+            self._pixel_expr = dlg.result_expr
+            self._apply_pixel_size()
 
     # ------------------------------------------------------------------
     # Drag and drop
