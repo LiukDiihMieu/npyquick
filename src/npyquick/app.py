@@ -68,7 +68,7 @@ class MainWindow(QMainWindow):
         self._tabs = QTabBar()
         for v in self._views:
             self._tabs.addTab(v.VIEW_NAME)
-        self._tabs.currentChanged.connect(self._stack.setCurrentIndex)
+        self._tabs.currentChanged.connect(self._on_tab_changed)
 
         container = QWidget()
         layout = QVBoxLayout(container)
@@ -83,6 +83,12 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
     # Tab state
     # ------------------------------------------------------------------
+
+    def _on_tab_changed(self, index: int) -> None:
+        self._stack.setCurrentIndex(index)
+        status = self._views[index].idle_status()
+        if status:
+            self._sb.showMessage(status)
 
     def _set_tabs_enabled(self, compatible: list[str]) -> None:
         for i, v in enumerate(self._views):

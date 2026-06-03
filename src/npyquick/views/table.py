@@ -63,6 +63,7 @@ class RawTableView(BaseView):
 
     def __init__(self) -> None:
         super().__init__()
+        self._status = ""
         self._model = NpyTableModel()
         self._table = QTableView()
         self._table.setModel(self._model)
@@ -83,7 +84,10 @@ class RawTableView(BaseView):
         cols = self._model.columnCount()
         actual_rows = array.shape[0] if array.ndim >= 1 else 1
         clipped = rows < actual_rows
-        msg = f"shape {array.shape}  dtype {array.dtype}  —  showing {rows}×{cols}"
+        self._status = f"shape {array.shape}  dtype {array.dtype}  —  showing {rows}×{cols}"
         if clipped:
-            msg += f"  (truncated from {actual_rows} rows)"
-        self._info.setText(msg)
+            self._status += f"  (truncated from {actual_rows} rows)"
+        self._info.setText(self._status)
+
+    def idle_status(self) -> str:
+        return self._status

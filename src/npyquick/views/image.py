@@ -5,7 +5,7 @@ from scipy import ndimage
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QSplitter
+from PySide6.QtWidgets import QSplitter, QVBoxLayout
 
 from .base import BaseView
 
@@ -46,11 +46,13 @@ class ImageCanvas(FigureCanvas):
         self._dragging: int | None = None
         self._cs_line = self._ep0 = self._ep1 = None
         self._pan_start: tuple | None = None
+        self._hover: tuple[int, int] | None = None
 
         self.mpl_connect("button_press_event", self._on_press)
         self.mpl_connect("motion_notify_event", self._on_motion)
         self.mpl_connect("button_release_event", self._on_release)
         self.mpl_connect("scroll_event", self._on_scroll)
+        self.mpl_connect("axes_leave_event", self._on_axes_leave)
 
     def load(self, data: np.ndarray) -> None:
         self._data = data.astype(float)
@@ -61,9 +63,25 @@ class ImageCanvas(FigureCanvas):
         self._fig.colorbar(im, ax=self._ax, fraction=0.046, pad=0.04)
         self._endpoints = np.array([[w * 0.1, h * 0.5], [w * 0.9, h * 0.5]], dtype=float)
         self._cs_line = self._ep0 = self._ep1 = None
+        self._hover = None
         self._init_artists()
         self._refresh_profile()
         self.draw()
+
+    def status_str(self) -> str:
+        parts = []
+        if self._hover is not None and self._data is not None:
+            x, y = self._hover
+            val = self._data[y, x]
+            parts.append(f"x={x}  y={y}  val={val:.4g}")
+        if self._data is not None:
+            p0, p1 = self._endpoints
+            parts.append(f"EP1({p0[0]:.0f}, {p0[1]:.0f}) → EP2({p1[0]:.0f}, {p1[1]:.0f})")
+        return "  |  ".join(parts)
+
+    # ------------------------------------------------------------------
+    # Artists
+    # ------------------------------------------------------------------
 
     def _init_artists(self) -> None:
         p0, p1 = self._endpoints
@@ -82,6 +100,10 @@ class ImageCanvas(FigureCanvas):
         self._ep1.set_xdata([p1[0]])
         self._ep1.set_ydata([p1[1]])
 
+    # ------------------------------------------------------------------
+    # Profile computation
+    # ------------------------------------------------------------------
+
     def _refresh_profile(self) -> None:
         if self._data is None:
             return
@@ -94,6 +116,10 @@ class ImageCanvas(FigureCanvas):
         profile = ndimage.map_coordinates(self._data, [ys, xs], order=1)
         dists = np.linspace(0.0, float(np.hypot(*diff)), n)
         self._profile.set_profile(dists, profile)
+
+    # ------------------------------------------------------------------
+    # Mouse interaction
+    # ------------------------------------------------------------------
 
     def _hit(self, xd: float, yd: float) -> int | None:
         click = self._ax.transData.transform([xd, yd])
@@ -109,6 +135,10 @@ class ImageCanvas(FigureCanvas):
         self._ax.set_xlim(-0.5, w - 0.5)
         self._ax.set_ylim(h - 0.5, -0.5)
         self.draw_idle()
+
+    def _on_axes_leave(self, ev) -> None:
+        self._hover = None
+        self._on_status(self.status_str())
 
     def _on_scroll(self, ev) -> None:
         if ev.inaxes is not self._ax or self._data is None:
@@ -150,6 +180,17 @@ class ImageCanvas(FigureCanvas):
     def _on_motion(self, ev) -> None:
         if self._data is None:
             return
+
+        # update hover position whenever inside axes
+        if ev.inaxes is self._ax:
+            h, w = self._data.shape
+            self._hover = (
+                int(round(np.clip(ev.xdata, 0, w - 1))),
+                int(round(np.clip(ev.ydata, 0, h - 1))),
+            )
+        else:
+            self._hover = None
+
         if self._dragging is not None:
             if ev.inaxes is not self._ax:
                 return
@@ -160,7 +201,6 @@ class ImageCanvas(FigureCanvas):
             self._sync_artists()
             self._refresh_profile()
             self.draw_idle()
-            self._on_status(f"Endpoint {self._dragging + 1}  x={x:.1f}  y={y:.1f}")
         elif self._pan_start is not None:
             x0_px, y0_px, xlim0, ylim0, inv0 = self._pan_start
             p0 = inv0.transform([x0_px, y0_px])
@@ -183,6 +223,8 @@ class ImageCanvas(FigureCanvas):
             self._ax.set_ylim(yl)
             self.draw_idle()
 
+        self._on_status(self.status_str())
+
     def _on_release(self, ev) -> None:
         if ev.button == 1:
             self._dragging = None
@@ -201,7 +243,6 @@ class ImageView(BaseView):
         sp.addWidget(self._canvas)
         sp.addWidget(self._profile)
         sp.setSizes([780, 480])
-        from PySide6.QtWidgets import QVBoxLayout
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(sp)
@@ -212,3 +253,6 @@ class ImageView(BaseView):
 
     def set_data(self, array: np.ndarray) -> None:
         self._canvas.load(array)
+
+    def idle_status(self) -> str:
+        return self._canvas.status_str()

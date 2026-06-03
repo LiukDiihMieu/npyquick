@@ -14,3 +14,6 @@ class BaseView(QWidget):
 
     def set_data(self, array: np.ndarray) -> None:
         raise NotImplementedError
+
+    def idle_status(self) -> str:
+        return ""
