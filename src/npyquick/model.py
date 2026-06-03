@@ -17,7 +17,10 @@ class NpyDataModel:
             return []
         views = []
         a = self.array
-        if a.ndim == 2 and np.issubdtype(a.dtype, np.number):
-            views.append("image")
+        if np.issubdtype(a.dtype, np.number):
+            if a.ndim == 2:
+                views.append("image")
+            elif a.ndim == 3 and a.shape[2] == 3:
+                views.append("image")
         views.append("table")
         return views
