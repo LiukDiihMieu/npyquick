@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
 )
 
 from .model import NpyDataModel
+from .views.dual_image import DualImageView
 from .views.image import ImageView
 from .views.table import RawTableView
 
@@ -81,8 +82,9 @@ class MainWindow(QMainWindow):
     def _build_central(self) -> None:
         self._image_view = ImageView(self._sb.showMessage)
         self._table_view = RawTableView()
+        self._compare_view = DualImageView(self._sb.showMessage)
 
-        self._views: list = [self._image_view, self._table_view]
+        self._views: list = [self._image_view, self._table_view, self._compare_view]
 
         self._stack = QStackedWidget()
         for v in self._views:
@@ -115,7 +117,7 @@ class MainWindow(QMainWindow):
 
     def _set_tabs_enabled(self, compatible: list[str]) -> None:
         for i, v in enumerate(self._views):
-            enabled = v.VIEW_ID in compatible
+            enabled = getattr(v, "ALWAYS_ENABLED", False) or v.VIEW_ID in compatible
             self._tabs.setTabEnabled(i, enabled)
         # switch to first enabled tab
         for i, v in enumerate(self._views):
