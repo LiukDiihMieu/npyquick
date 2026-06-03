@@ -5,7 +5,7 @@ import sys
 
 from PySide6.QtWidgets import QApplication
 
-from npyquick.viewer import MainWindow
+from npyquick.app import MainWindow
 
 
 def main() -> None:
