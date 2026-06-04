@@ -83,3 +83,29 @@ def test_path_set_after_load(tmp_path):
     m = NpyDataModel()
     m.load(str(p))
     assert m.path == str(p)
+
+
+def test_empty_npz_raises_value_error(tmp_path):
+    p = tmp_path / "empty.npz"
+    np.savez(p)  # archive with no arrays
+    m = NpyDataModel()
+    with pytest.raises(ValueError, match="no arrays"):
+        m.load(str(p))
+
+
+def test_empty_npz_does_not_pollute_previous_state(tmp_path):
+    good = tmp_path / "good.npy"
+    np.save(good, np.arange(6, dtype=np.float32))
+    empty_npz = tmp_path / "empty.npz"
+    np.savez(empty_npz)
+
+    m = NpyDataModel()
+    m.load(str(good))
+    prev_array = m.array
+    prev_path = m.path
+
+    with pytest.raises(ValueError):
+        m.load(str(empty_npz))
+
+    assert m.path == prev_path
+    np.testing.assert_array_equal(m.array, prev_array)

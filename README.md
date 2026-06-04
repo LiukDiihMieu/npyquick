@@ -8,7 +8,6 @@ A fast, lightweight GUI viewer for NumPy arrays (`.npy` / `.npz`), built with Py
 ```bash
 conda env create -f environment.yml
 conda activate npyquick
-pip install -e .
 ```
 
 **With pip only:**

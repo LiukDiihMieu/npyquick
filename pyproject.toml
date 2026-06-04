@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "npyquick"
 version = "0.1.0"
-description = "Quick GUI viewer for 2D grayscale .npy files with interactive cross section analysis"
+description = "Quick GUI viewer for .npy / .npz arrays with image, table, and cross-section views"
 requires-python = ">=3.10"
 dependencies = [
     "numpy>=1.24",
