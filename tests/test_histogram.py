@@ -5,6 +5,7 @@ import numpy as np
 import pytest
 
 from npyquick.views.histogram import HistogramCanvas, HistogramView
+from npyquick.views.image import ImageView
 
 
 # ---------------------------------------------------------------------------
@@ -147,3 +148,48 @@ def test_axes_leave_restores_idle_status():
     c.set_idle_status("idle msg")
     c._on_axes_leave(None)
     assert messages[-1] == "idle msg"
+
+
+# ---------------------------------------------------------------------------
+# Regression: stale clim marker from previous Image array
+# ---------------------------------------------------------------------------
+
+def _simulate_refresh(image_view, histogram_view, array):
+    """Mirror _refresh_views() clim logic."""
+    histogram_view.set_data(array)
+    if ImageView.can_handle(array):
+        histogram_view.update_clim_marker(*image_view.get_clim())
+    else:
+        histogram_view.update_clim_marker(None, None)
+
+
+def test_clim_marker_cleared_when_switching_to_non_image_array():
+    iv = ImageView()
+    hv = HistogramView()
+
+    image_2d = np.arange(9, dtype=np.float32).reshape(3, 3)
+    _simulate_refresh(iv, hv, image_2d)
+    iv.set_data(image_2d)
+    hv.update_clim_marker(*iv.get_clim())
+    assert hv._canvas._clim is not None, "clim should be set after image load"
+
+    line_1d = np.arange(10, dtype=np.float32)
+    _simulate_refresh(iv, hv, line_1d)
+    assert hv._canvas._clim is None, "clim must be cleared when array is not image-compatible"
+    assert hv._canvas._vline_lo is None
+    assert hv._canvas._vline_hi is None
+
+
+def test_clim_marker_preserved_when_switching_between_images():
+    iv = ImageView()
+    hv = HistogramView()
+
+    img_a = np.arange(9, dtype=np.float32).reshape(3, 3)
+    iv.set_data(img_a)
+    _simulate_refresh(iv, hv, img_a)
+    assert hv._canvas._clim is not None
+
+    img_b = np.arange(16, dtype=np.float32).reshape(4, 4)
+    iv.set_data(img_b)
+    _simulate_refresh(iv, hv, img_b)
+    assert hv._canvas._clim is not None

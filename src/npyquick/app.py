@@ -216,7 +216,10 @@ class MainWindow(QMainWindow):
         for v in self._views:
             if v.VIEW_ID in compatible:
                 v.set_data(array)
-        self._histogram_view.update_clim_marker(*self._image_view.get_clim())
+        if self._image_view.can_handle(array):
+            self._histogram_view.update_clim_marker(*self._image_view.get_clim())
+        else:
+            self._histogram_view.update_clim_marker(None, None)
         self._apply_pixel_size()
         self._apply_colormap(self._colormap)
         self._set_tabs_enabled(compatible)
