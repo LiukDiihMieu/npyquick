@@ -108,8 +108,9 @@ class ImageCanvas(FigureCanvas):
 
         h, w = data.shape[:2]
         extent = self._transform.extent(h, w)
+        norm_str: str | None = None
         if self._rgb:
-            display = self._to_display_rgb(data)
+            display, norm_str = self._prepare_rgb(data)
             self._im = self._ax.imshow(
                 display, origin="upper", interpolation="nearest", extent=extent,
             )
@@ -133,15 +134,24 @@ class ImageCanvas(FigureCanvas):
         self._init_artists()
         self._refresh_profile()
         self.draw()
+        return norm_str
 
     @staticmethod
-    def _to_display_rgb(data: np.ndarray) -> np.ndarray:
+    def _prepare_rgb(data: np.ndarray) -> tuple[np.ndarray, str]:
         d = data[:, :, :3].astype(float)
         if np.issubdtype(data.dtype, np.integer):
-            d = d / 255.0
-        elif d.max() > 1.0:
-            d = d / d.max()
-        return np.clip(d, 0.0, 1.0)
+            maxval = np.iinfo(data.dtype).max
+            d = d / maxval
+            norm_str = f"{data.dtype} ÷ {maxval}"
+        else:
+            lo, hi = float(d.min()), float(d.max())
+            if lo >= 0.0 and hi <= 1.0:
+                norm_str = f"float [{lo:.3g}, {hi:.3g}] — as-is"
+            else:
+                span = hi - lo
+                d = (d - lo) / span if span > 0 else np.zeros_like(d)
+                norm_str = f"float [{lo:.3g}, {hi:.3g}] → [0, 1]  (global min-max)"
+        return np.clip(d, 0.0, 1.0), norm_str
 
     def status_str(self) -> str:
         parts = []
@@ -380,6 +390,9 @@ class ImageView(BaseView, SpatialView, ColormappedView):
         self._apply_btn.clicked.connect(self._apply_clim)
         self._reset_btn.clicked.connect(self._reset_clim)
 
+        self._norm_label = QLabel()
+        self._norm_label.setVisible(False)
+
         ctrl = QWidget()
         ctrl_layout = QHBoxLayout(ctrl)
         ctrl_layout.setContentsMargins(6, 2, 6, 2)
@@ -390,6 +403,7 @@ class ImageView(BaseView, SpatialView, ColormappedView):
         ctrl_layout.addWidget(self._apply_btn)
         ctrl_layout.addWidget(self._reset_btn)
         ctrl_layout.addStretch()
+        ctrl_layout.addWidget(self._norm_label)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -408,12 +422,18 @@ class ImageView(BaseView, SpatialView, ColormappedView):
         return False
 
     def set_data(self, array: np.ndarray) -> None:
-        self._canvas.load(array)
+        norm_str = self._canvas.load(array)
         self._vmin_edit.clear()
         self._vmax_edit.clear()
         rgb = array.ndim == 3
         for w in (self._vmin_edit, self._vmax_edit, self._apply_btn, self._reset_btn):
             w.setEnabled(not rgb)
+        if norm_str is not None:
+            self._norm_label.setText(f"norm: {norm_str}")
+            self._norm_label.setVisible(True)
+        else:
+            self._norm_label.setText("")
+            self._norm_label.setVisible(False)
 
     def set_pixel_size(self, ps: float, unit: str) -> None:
         self._canvas.set_pixel_size(ps, unit)
