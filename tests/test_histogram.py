@@ -32,6 +32,14 @@ def test_cannot_handle_empty_array():
     assert not HistogramView.can_handle(np.empty((0, 5)))
 
 
+def test_cannot_handle_complex_1d():
+    assert not HistogramView.can_handle(np.array([1+2j, 3+4j], dtype=np.complex128))
+
+
+def test_cannot_handle_complex_2d():
+    assert not HistogramView.can_handle(np.zeros((4, 4), dtype=np.complex64))
+
+
 # ---------------------------------------------------------------------------
 # set_data — labels and anomaly visibility
 # ---------------------------------------------------------------------------

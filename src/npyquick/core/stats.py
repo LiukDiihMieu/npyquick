@@ -36,18 +36,25 @@ class ArrayStats:
         return f"{prefix} [{self.finite_min:.4g}, {self.finite_max:.4g}]"
 
 
+def is_real_numeric(array: np.ndarray) -> bool:
+    """True for real integer and floating dtypes; False for complex and non-numeric."""
+    return (
+        np.issubdtype(array.dtype, np.number)
+        and not np.issubdtype(array.dtype, np.complexfloating)
+    )
+
+
 def array_stats(array: np.ndarray) -> ArrayStats | None:
     """Compute finite range and anomaly counts for numeric arrays.
 
-    Returns None for non-numeric dtypes or empty arrays.
+    Returns None for non-numeric, complex, or empty arrays.
     Integer arrays cannot contain NaN/Inf, so anomaly counts are always 0.
     """
-    if not np.issubdtype(array.dtype, np.number) or array.size == 0:
+    if not is_real_numeric(array) or array.size == 0:
         return None
     if np.issubdtype(array.dtype, np.integer):
         lo, hi = float(array.min()), float(array.max())
         return ArrayStats(lo, hi, 0, 0, 0)
-    # floating-point and complex
     nan_count = int(np.sum(np.isnan(array)))
     pos_inf_count = int(np.sum(np.isposinf(array)))
     neg_inf_count = int(np.sum(np.isneginf(array)))

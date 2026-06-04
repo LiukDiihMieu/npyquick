@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (
 
 from ..core.coord import PixelTransform
 from ..core.profile import compute_profile
-from ..core.stats import array_stats
+from ..core.stats import array_stats, is_real_numeric
 from .base import BaseView, ColormappedView, SpatialView
 
 
@@ -425,9 +425,9 @@ class ImageView(BaseView, SpatialView, ColormappedView):
         if array.size == 0:
             return False
         if array.ndim == 2:
-            return np.issubdtype(array.dtype, np.number)
+            return is_real_numeric(array)
         if array.ndim == 3 and array.shape[2] == 3:
-            return np.issubdtype(array.dtype, np.number)
+            return is_real_numeric(array)
         return False
 
     def set_data(self, array: np.ndarray) -> None:

@@ -8,7 +8,7 @@ from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget,
 )
 
-from ..core.stats import array_stats
+from ..core.stats import array_stats, is_real_numeric
 from .base import BaseView
 
 _BIN_OPTIONS = ["auto", "64", "128", "256", "512"]
@@ -226,7 +226,7 @@ class HistogramView(BaseView):
 
     @classmethod
     def can_handle(cls, array: np.ndarray) -> bool:
-        return np.issubdtype(array.dtype, np.number) and array.size > 0
+        return is_real_numeric(array) and array.size > 0
 
     def set_data(self, array: np.ndarray) -> None:
         stats = array_stats(array)

@@ -84,3 +84,20 @@ def test_image_rejects_empty_2d():
 
 def test_image_rejects_empty_rgb():
     assert ImageView.can_handle(np.empty((0, 5, 3), dtype=float)) is False
+
+
+def test_image_rejects_complex_2d():
+    assert ImageView.can_handle(np.zeros((4, 4), dtype=np.complex128)) is False
+
+
+def test_image_rejects_complex_rgb():
+    assert ImageView.can_handle(np.zeros((4, 4, 3), dtype=np.complex64)) is False
+
+
+# ---------------------------------------------------------------------------
+# Complex arrays fall back to Table view only
+# ---------------------------------------------------------------------------
+
+def test_table_accepts_complex():
+    from npyquick.views.table import RawTableView
+    assert RawTableView.can_handle(np.zeros((4, 4), dtype=np.complex128)) is True
