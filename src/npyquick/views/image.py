@@ -74,12 +74,12 @@ class ProfileCanvas(FigureCanvas):
 class ImageCanvas(FigureCanvas):
     _HIT_RADIUS = 12
 
-    def __init__(self, profile: ProfileCanvas, on_status: callable) -> None:
+    def __init__(self, profile: ProfileCanvas) -> None:
         self._fig = Figure(constrained_layout=True)
         super().__init__(self._fig)
         self._ax = self._fig.add_subplot(111)
         self._profile = profile
-        self._on_status = on_status
+        self._on_status: callable = lambda _: None
         self._data: np.ndarray | None = None
         self._rgb: bool = False
         self._endpoints = np.zeros((2, 2), dtype=float)
@@ -96,6 +96,9 @@ class ImageCanvas(FigureCanvas):
         self.mpl_connect("button_release_event", self._on_release)
         self.mpl_connect("scroll_event", self._on_scroll)
         self.mpl_connect("axes_leave_event", self._on_axes_leave)
+
+    def set_on_status(self, cb: callable) -> None:
+        self._on_status = cb
 
     def load(self, data: np.ndarray) -> None:
         self._data = data
@@ -352,10 +355,10 @@ class ImageView(BaseView, SpatialView, ColormappedView):
     VIEW_ID = "image"
     VIEW_NAME = "Image"
 
-    def __init__(self, on_status: callable) -> None:
+    def __init__(self) -> None:
         super().__init__()
         self._profile = ProfileCanvas()
-        self._canvas = ImageCanvas(self._profile, on_status)
+        self._canvas = ImageCanvas(self._profile)
 
         sp = QSplitter(Qt.Horizontal)
         sp.addWidget(self._canvas)
@@ -416,6 +419,13 @@ class ImageView(BaseView, SpatialView, ColormappedView):
     def set_colormap(self, name: str) -> None:
         self._canvas.set_colormap(name)
 
+    def set_on_status(self, cb: callable) -> None:
+        super().set_on_status(cb)
+        self._canvas.set_on_status(cb)
+
+    def refresh_status(self) -> None:
+        self._on_status(self._canvas.status_str())
+
     def _apply_clim(self) -> None:
         try:
             vmin = float(self._vmin_edit.text()) if self._vmin_edit.text() else None
@@ -429,5 +439,3 @@ class ImageView(BaseView, SpatialView, ColormappedView):
         self._vmax_edit.clear()
         self._canvas.reset_clim()
 
-    def idle_status(self) -> str:
-        return self._canvas.status_str()

@@ -133,5 +133,5 @@ class RawTableView(BaseView):
                 self._status += f"  (truncated from {actual_rows} rows)"
         self._info.setText(self._status)
 
-    def idle_status(self) -> str:
-        return self._status
+    def refresh_status(self) -> None:
+        self._on_status(self._status)

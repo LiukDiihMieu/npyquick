@@ -89,10 +89,12 @@ class MainWindow(QMainWindow):
             cmap_menu.addAction(a)
 
     def _build_central(self) -> None:
-        self._image_view = ImageView(self._sb.showMessage)
+        self._image_view = ImageView()
         self._table_view = RawTableView()
 
         self._views: list = [self._image_view, self._table_view]
+        for v in self._views:
+            v.set_on_status(self._sb.showMessage)
 
         self._stack = QStackedWidget()
         for v in self._views:
@@ -119,9 +121,7 @@ class MainWindow(QMainWindow):
 
     def _on_tab_changed(self, index: int) -> None:
         self._stack.setCurrentIndex(index)
-        status = self._views[index].idle_status()
-        if status:
-            self._sb.showMessage(status)
+        self._views[index].refresh_status()
 
     def _set_tabs_enabled(self, compatible: list[str]) -> None:
         for i, v in enumerate(self._views):

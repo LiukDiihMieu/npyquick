@@ -20,12 +20,19 @@ class BaseView(QWidget):
     VIEW_ID: str = ""
     VIEW_NAME: str = ""
 
+    def __init__(self) -> None:
+        super().__init__()
+        self._on_status: callable = lambda _: None
+
+    def set_on_status(self, cb: callable) -> None:
+        self._on_status = cb
+
+    def refresh_status(self) -> None:
+        """Push the view's current status to the status bar. Called on tab switch."""
+
     @classmethod
     def can_handle(cls, array: np.ndarray) -> bool:
         raise NotImplementedError
 
     def set_data(self, array: np.ndarray) -> None:
         raise NotImplementedError
-
-    def idle_status(self) -> str:
-        return ""

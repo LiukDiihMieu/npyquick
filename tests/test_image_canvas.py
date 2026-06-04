@@ -5,12 +5,8 @@ import numpy as np
 from npyquick.views.image import ImageView
 
 
-def _silent_status(_msg: str) -> None:
-    pass
-
-
 def test_set_pixel_size_scales_endpoints():
-    iv = ImageView(_silent_status)
+    iv = ImageView()
     iv.set_data(np.zeros((10, 20), dtype=np.float32))
     ep0 = iv._canvas._endpoints.copy()
 
@@ -25,7 +21,7 @@ def test_set_pixel_size_scales_endpoints():
 
 def test_set_pixel_size_w1_regression():
     """Regression: w==1 used to fall back to old_ps=1.0, mis-scaling endpoints."""
-    iv = ImageView(_silent_status)
+    iv = ImageView()
     iv.set_data(np.arange(10).reshape(10, 1).astype(np.float32))
 
     iv.set_pixel_size(2.0, "μm")
@@ -38,7 +34,7 @@ def test_set_pixel_size_w1_regression():
 
 
 def test_pixel_size_propagates_to_profile():
-    iv = ImageView(_silent_status)
+    iv = ImageView()
     iv.set_data(np.zeros((10, 10), dtype=np.float32))
     iv.set_pixel_size(0.5, "mm")
     assert iv._canvas._profile._transform.pixel_size == 0.5
@@ -46,7 +42,7 @@ def test_pixel_size_propagates_to_profile():
 
 
 def test_set_pixel_size_before_data_is_safe():
-    iv = ImageView(_silent_status)
+    iv = ImageView()
     # no data loaded yet
     iv.set_pixel_size(2.0, "μm")
     assert iv._canvas._transform.pixel_size == 2.0
@@ -59,7 +55,7 @@ def test_set_pixel_size_before_data_is_safe():
 
 
 def test_image_view_handles_rgb():
-    iv = ImageView(_silent_status)
+    iv = ImageView()
     rgb = np.zeros((10, 10, 3), dtype=np.uint8)
     iv.set_data(rgb)
     # vmin/vmax controls disabled for RGB
