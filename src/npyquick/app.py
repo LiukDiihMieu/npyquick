@@ -34,6 +34,7 @@ def _format_array_summary(array: np.ndarray) -> str:
                 parts.append(stats.anomaly_str())
     return "  |  ".join(parts)
 from .views.base import ColormappedView, SpatialView
+from .views.histogram import HistogramView
 from .views.image import ImageView
 from .views.pixel_size_dialog import PixelSizeDialog
 from .views.table import RawTableView
@@ -113,10 +114,12 @@ class MainWindow(QMainWindow):
     def _build_central(self) -> None:
         self._image_view = ImageView()
         self._table_view = RawTableView()
+        self._histogram_view = HistogramView()
 
-        self._views: list = [self._image_view, self._table_view]
+        self._views: list = [self._image_view, self._table_view, self._histogram_view]
         for v in self._views:
             v.set_on_status(self._sb.showMessage)
+        self._image_view.set_on_clim_change(self._histogram_view.update_clim_marker)
 
         self._stack = QStackedWidget()
         for v in self._views:
@@ -213,6 +216,7 @@ class MainWindow(QMainWindow):
         for v in self._views:
             if v.VIEW_ID in compatible:
                 v.set_data(array)
+        self._histogram_view.update_clim_marker(*self._image_view.get_clim())
         self._apply_pixel_size()
         self._apply_colormap(self._colormap)
         self._set_tabs_enabled(compatible)

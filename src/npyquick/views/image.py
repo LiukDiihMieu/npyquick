@@ -371,6 +371,7 @@ class ImageView(BaseView, SpatialView, ColormappedView):
 
     def __init__(self) -> None:
         super().__init__()
+        self._on_clim_change: callable = lambda vmin, vmax: None
         self._profile = ProfileCanvas()
         self._canvas = ImageCanvas(self._profile)
 
@@ -463,11 +464,20 @@ class ImageView(BaseView, SpatialView, ColormappedView):
     def refresh_status(self) -> None:
         self._on_status(self._canvas.status_str())
 
+    def set_on_clim_change(self, cb: callable) -> None:
+        self._on_clim_change = cb
+
+    def get_clim(self) -> tuple[float | None, float | None]:
+        if self._canvas._im is None or self._canvas._rgb:
+            return None, None
+        return self._canvas._im.get_clim()
+
     def _apply_clim(self) -> None:
         try:
             vmin = float(self._vmin_edit.text()) if self._vmin_edit.text() else None
             vmax = float(self._vmax_edit.text()) if self._vmax_edit.text() else None
             self._canvas.set_clim(vmin, vmax)
+            self._on_clim_change(*self.get_clim())
         except ValueError:
             pass
 
@@ -475,4 +485,5 @@ class ImageView(BaseView, SpatialView, ColormappedView):
         self._vmin_edit.clear()
         self._vmax_edit.clear()
         self._canvas.reset_clim()
+        self._on_clim_change(*self.get_clim())
 
