@@ -20,7 +20,10 @@ class NpyTableModel(QAbstractTableModel):
 
     def set_array(self, array: np.ndarray) -> None:
         self.beginResetModel()
-        if array.ndim == 1:
+        if array.ndim == 0:
+            self._array = array.reshape(1, 1)
+            self._flat = False
+        elif array.ndim == 1:
             self._array = array
             self._flat = True
         elif array.ndim == 2:

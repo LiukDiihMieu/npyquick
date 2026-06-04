@@ -399,6 +399,8 @@ class ImageView(BaseView, SpatialView, ColormappedView):
 
     @classmethod
     def can_handle(cls, array: np.ndarray) -> bool:
+        if array.size == 0:
+            return False
         if array.ndim == 2:
             return np.issubdtype(array.dtype, np.number)
         if array.ndim == 3 and array.shape[2] == 3:

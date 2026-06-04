@@ -16,6 +16,15 @@ from PySide6.QtWidgets import (
 )
 
 from .model import NpyDataModel
+
+
+def _format_array_summary(array: np.ndarray) -> str:
+    parts = [f"shape {array.shape}", f"dtype {array.dtype}"]
+    if array.size == 0:
+        parts.append("empty")
+    elif np.issubdtype(array.dtype, np.number):
+        parts.append(f"range [{array.min():.4g}, {array.max():.4g}]")
+    return "  |  ".join(parts)
 from .views.base import ColormappedView, SpatialView
 from .views.image import ImageView
 from .views.pixel_size_dialog import PixelSizeDialog
@@ -167,11 +176,7 @@ class MainWindow(QMainWindow):
         self._last_dir = os.path.dirname(os.path.abspath(path))
         QSettings("npyquick", "npyquick").setValue("last_dir", self._last_dir)
         self.setWindowTitle(f"npyquick — {path}")
-        self._sb.showMessage(
-            f"{os.path.basename(path)}  |  shape {array.shape}  |  {array.dtype}"
-            + (f"  |  range [{array.min():.4g}, {array.max():.4g}]"
-               if np.issubdtype(array.dtype, np.number) else "")
-        )
+        self._sb.showMessage(f"{os.path.basename(path)}  |  {_format_array_summary(array)}")
 
     # ------------------------------------------------------------------
     # Pixel size
