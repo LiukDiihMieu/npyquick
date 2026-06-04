@@ -83,6 +83,7 @@ class DualImageCanvas(FigureCanvas):
         on_endpoints_changed: callable | None = None,
         on_drop: callable | None = None,
         editable: bool = True,
+        accept_extensions: tuple[str, ...] = (".npy",),
     ) -> None:
         self._fig = Figure(constrained_layout=True)
         super().__init__(self._fig)
@@ -92,6 +93,7 @@ class DualImageCanvas(FigureCanvas):
         self._on_endpoints_changed = on_endpoints_changed
         self._on_drop = on_drop
         self._editable = editable
+        self._accept_extensions = accept_extensions
         self._data: np.ndarray | None = None
         self._endpoints = np.zeros((2, 2), dtype=float)
         self._dragging: int | None = None
@@ -353,7 +355,7 @@ class DualImageCanvas(FigureCanvas):
 
     def dragEnterEvent(self, ev) -> None:
         urls = ev.mimeData().urls()
-        if urls and QUrl.toLocalFile(urls[0]).endswith(".npy"):
+        if urls and any(QUrl.toLocalFile(urls[0]).endswith(ext) for ext in self._accept_extensions):
             ev.acceptProposedAction()
 
     def dropEvent(self, ev) -> None:
@@ -373,6 +375,7 @@ class DualImageView(BaseView, SpatialView, ColormappedView):
         self._img2: np.ndarray | None = None
         self._diff_mode: bool = False
         self._colormap: str = "gray"
+        self._on_img1_load: callable | None = None
 
         # Proxy so canvases always use the current callback even after set_on_status
         def _status_proxy(msg: str) -> None:
@@ -381,12 +384,14 @@ class DualImageView(BaseView, SpatialView, ColormappedView):
         self._canvas1 = DualImageCanvas(
             "Img 1", _status_proxy,
             on_endpoints_changed=self._on_img1_endpoints_changed,
-            on_drop=lambda p: self._load_image(p, slot=1),
+            on_drop=self._handle_img1_drop,
+            accept_extensions=(".npy", ".npz"),
         )
         self._canvas2 = DualImageCanvas(
             "Img 2", _status_proxy,
             on_endpoints_changed=self._on_img2_endpoints_changed,
-            on_drop=lambda p: self._load_image(p, slot=2),
+            on_drop=lambda p: self._load_img2(p),
+            accept_extensions=(".npy",),
         )
         self._diff_canvas = DualImageCanvas(
             "Diff (Img1 − Img2)", _status_proxy,
@@ -514,41 +519,60 @@ class DualImageView(BaseView, SpatialView, ColormappedView):
     # File loading
     # ------------------------------------------------------------------
 
+    def set_img1_label(self, text: str) -> None:
+        self._img1_label.setText(text)
+
+    def set_on_img1_load(self, cb: callable) -> None:
+        """Register callback invoked when Img 1 is opened via Compare controls.
+
+        The callback receives the file path and is expected to call
+        MainWindow.load_file(), which will push the array back via set_data().
+        This keeps Img 1 in sync with the Image and Table views.
+        """
+        self._on_img1_load = cb
+
     def _open_dialog(self, slot: int) -> None:
         s = QSettings("npyquick", "npyquick")
         start = s.value("last_dir", os.path.expanduser("~"))
-        path, _ = QFileDialog.getOpenFileName(
-            self, f"Open Image {slot}", start, "NumPy files (*.npy *.npz);;All files (*)"
-        )
-        if path:
-            s.setValue("last_dir", os.path.dirname(os.path.abspath(path)))
-            self._load_image(path, slot)
+        if slot == 1:
+            path, _ = QFileDialog.getOpenFileName(
+                self, "Open Image 1", start, "NumPy files (*.npy *.npz);;All files (*)"
+            )
+            if path and self._on_img1_load is not None:
+                self._on_img1_load(path)
+        else:
+            path, _ = QFileDialog.getOpenFileName(
+                self, "Open Image 2", start, "NumPy files (*.npy);;All files (*)"
+            )
+            if path:
+                s.setValue("last_dir", os.path.dirname(os.path.abspath(path)))
+                self._load_img2(path)
 
-    def _load_image(self, path: str, slot: int) -> None:
+    def _handle_img1_drop(self, path: str) -> None:
+        if self._on_img1_load is not None:
+            self._on_img1_load(path)
+
+    def _load_img2(self, path: str) -> None:
         try:
             data = np.load(path, allow_pickle=False)
+            if not isinstance(data, np.ndarray):
+                self._on_status("Img 2: use an .npy file (for .npz use File › Open to pick an array)")
+                return
         except Exception as exc:
-            self._on_status(f"Error: {exc}")
+            self._on_status(f"Error loading Img 2: {exc}")
             return
         if data.ndim != 2 or not np.issubdtype(data.dtype, np.number):
             self._on_status(
-                f"Expected 2D grayscale array, got shape {data.shape} dtype {data.dtype}"
+                f"Img 2: expected 2D numeric array, got shape {data.shape} dtype {data.dtype}"
             )
             return
-        other = self._img2 if slot == 1 else self._img1
-        if other is not None and data.shape != other.shape:
+        if self._img1 is not None and data.shape != self._img1.shape:
             self._on_status(
-                f"Shape mismatch: {data.shape} ≠ {other.shape} — both images must be the same size"
+                f"Shape mismatch: {data.shape} ≠ {self._img1.shape} — both images must match"
             )
             return
-
-        if slot == 1:
-            self._img1 = data
-            self._img1_label.setText(os.path.basename(path))
-        else:
-            self._img2 = data
-            self._img2_label.setText(os.path.basename(path))
-
+        self._img2 = data
+        self._img2_label.setText(os.path.basename(path))
         self._refresh_all()
 
     # ------------------------------------------------------------------

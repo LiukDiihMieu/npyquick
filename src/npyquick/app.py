@@ -121,6 +121,7 @@ class MainWindow(QMainWindow):
         self._views: list = [self._image_view, self._table_view, self._compare_view]
         for v in self._views:
             v.set_on_status(self._sb.showMessage)
+        self._compare_view.set_on_img1_load(self.load_file)
 
         self._stack = QStackedWidget()
         for v in self._views:
@@ -225,6 +226,7 @@ class MainWindow(QMainWindow):
         for v in self._views:
             if v.VIEW_ID in compatible:
                 v.set_data(array)
+        self._compare_view.set_img1_label(os.path.basename(self._current_path))
         self._apply_pixel_size()
         self._apply_colormap(self._colormap)
         self._set_tabs_enabled(compatible)
