@@ -676,6 +676,7 @@ class DualImageView(BaseView, SpatialView, ColormappedView):
     def _align_endpoints(self) -> None:
         self._canvas2.set_endpoints(self._canvas1.get_endpoints())
         self._canvas2.set_view(*self._canvas1.get_view())
+        self._diff_canvas.set_view(*self._canvas1.get_view())
         self._refresh_profile()
 
     def _toggle_diff(self, checked: bool) -> None:
