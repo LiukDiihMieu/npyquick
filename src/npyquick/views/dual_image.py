@@ -159,6 +159,14 @@ class DualImageCanvas(FigureCanvas):
             self._im.set_clim(vmin, vmax)
             self.draw_idle()
 
+    def get_view(self) -> tuple[tuple, tuple]:
+        return self._ax.get_xlim(), self._ax.get_ylim()
+
+    def set_view(self, xlim: tuple, ylim: tuple) -> None:
+        self._ax.set_xlim(xlim)
+        self._ax.set_ylim(ylim)
+        self.draw_idle()
+
     def set_colormap(self, name: str) -> None:
         if self._im is not None:
             self._im.set_cmap(name)
@@ -667,6 +675,7 @@ class DualImageView(BaseView, SpatialView, ColormappedView):
 
     def _align_endpoints(self) -> None:
         self._canvas2.set_endpoints(self._canvas1.get_endpoints())
+        self._canvas2.set_view(*self._canvas1.get_view())
         self._refresh_profile()
 
     def _toggle_diff(self, checked: bool) -> None:
