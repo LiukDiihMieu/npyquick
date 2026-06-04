@@ -41,18 +41,22 @@ class MainWindow(QMainWindow):
         _s = QSettings("npyquick", "npyquick")
         saved = _s.value("last_dir", os.path.expanduser("~"))
         self._last_dir = saved if os.path.isdir(saved) else os.path.expanduser("~")
+        self._colormap: str = _s.value("colormap", "gray")
 
         self._model = NpyDataModel()
         self._pixel_size: float = 1.0
         self._pixel_unit: str = "None"
         self._pixel_expr: str = "1"
-        self._colormap: str = "gray"
         self._sb = QStatusBar()
         self.setStatusBar(self._sb)
 
         self._build_menu()
         self._build_central()
         self._sb.showMessage("File › Open  (Ctrl+O)  to load a .npy file.")
+
+        geom = _s.value("geometry")
+        if geom:
+            self.restoreGeometry(geom)
 
     # ------------------------------------------------------------------
     # UI construction
@@ -92,7 +96,7 @@ class MainWindow(QMainWindow):
         group.setExclusive(True)
         for name, label in colormaps:
             a = QAction(label, self, checkable=True)
-            a.setChecked(name == "gray")
+            a.setChecked(name == self._colormap)
             a.triggered.connect(lambda checked, n=name: self._apply_colormap(n))
             group.addAction(a)
             cmap_menu.addAction(a)
@@ -189,6 +193,7 @@ class MainWindow(QMainWindow):
 
     def _apply_colormap(self, name: str) -> None:
         self._colormap = name
+        QSettings("npyquick", "npyquick").setValue("colormap", name)
         for v in self._views:
             if isinstance(v, ColormappedView):
                 v.set_colormap(name)
@@ -213,3 +218,7 @@ class MainWindow(QMainWindow):
     def dropEvent(self, ev) -> None:
         path = QUrl.toLocalFile(ev.mimeData().urls()[0])
         self.load_file(path)
+
+    def closeEvent(self, ev) -> None:
+        QSettings("npyquick", "npyquick").setValue("geometry", self.saveGeometry())
+        super().closeEvent(ev)
