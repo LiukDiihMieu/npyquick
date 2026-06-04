@@ -13,11 +13,18 @@ class NpyDataModel:
     def load(self, path: str) -> None:
         if path.endswith(".npz"):
             with np.load(path, allow_pickle=False) as f:
-                self._arrays = {k: f[k] for k in f.files}
+                arrays = {k: f[k] for k in f.files}
+            if not arrays:
+                raise ValueError("NPZ archive contains no arrays")
         else:
-            self._arrays = {"": np.load(path, allow_pickle=False)}
+            arrays = {"": np.load(path, allow_pickle=False)}
+
+        # Commit to instance state only after full validation
+        selected = next(iter(arrays))
+        self._arrays = arrays
+        self._selected_key = selected
+        self.array = arrays[selected]
         self.path = path
-        self.select_array(next(iter(self._arrays)))
 
     def available_arrays(self) -> dict[str, np.ndarray]:
         return dict(self._arrays)

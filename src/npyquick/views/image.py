@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import numpy as np
-from scipy import ndimage
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from PySide6.QtCore import Qt
@@ -9,11 +8,10 @@ from PySide6.QtWidgets import (
     QHBoxLayout, QLabel, QLineEdit, QPushButton, QSplitter, QVBoxLayout, QWidget,
 )
 
+from ..core.coord import PixelTransform
+from ..core.profile import compute_profile
+from ..core.stats import array_stats
 from .base import BaseView, ColormappedView, SpatialView
-
-
-def _fmt_unit(unit: str) -> str:
-    return "" if unit == "None" else unit
 
 
 class ProfileCanvas(FigureCanvas):
@@ -21,13 +19,12 @@ class ProfileCanvas(FigureCanvas):
         fig = Figure(constrained_layout=True)
         self._ax = fig.add_subplot(111)
         super().__init__(fig)
-        self._pixel_size: float = 1.0
-        self._unit: str = "None"
+        self._transform = PixelTransform()
         self._setup_axes()
         self._lines: list = []
 
     def _setup_axes(self) -> None:
-        u = _fmt_unit(self._unit) if hasattr(self, "_unit") else "px"
+        u = self._transform.format_unit()
         label = f"Distance ({u})" if u else "Distance"
         self._ax.set_xlabel(label)
         self._ax.set_ylabel("Intensity")
@@ -35,9 +32,11 @@ class ProfileCanvas(FigureCanvas):
         self._ax.grid(True, alpha=0.3)
 
     def set_pixel_size(self, ps: float, unit: str) -> None:
-        self._pixel_size = ps
-        self._unit = unit
-        u = _fmt_unit(unit)
+        new_t = PixelTransform(ps, unit)
+        if new_t == self._transform:
+            return
+        self._transform = new_t
+        u = new_t.format_unit()
         self._ax.set_xlabel(f"Distance ({u})" if u else "Distance")
         self.draw_idle()
 
@@ -45,7 +44,7 @@ class ProfileCanvas(FigureCanvas):
         # values: shape (N,) for grayscale, (C, N) for RGB
         is_rgb = values.ndim == 2
         n_ch = values.shape[0] if is_rgb else 1
-        dists = distances * self._pixel_size
+        dists = distances * self._transform.pixel_size
 
         if n_ch != len(self._lines):
             self._ax.cla()
@@ -76,12 +75,12 @@ class ProfileCanvas(FigureCanvas):
 class ImageCanvas(FigureCanvas):
     _HIT_RADIUS = 12
 
-    def __init__(self, profile: ProfileCanvas, on_status: callable) -> None:
+    def __init__(self, profile: ProfileCanvas) -> None:
         self._fig = Figure(constrained_layout=True)
         super().__init__(self._fig)
         self._ax = self._fig.add_subplot(111)
         self._profile = profile
-        self._on_status = on_status
+        self._on_status: callable = lambda _: None
         self._data: np.ndarray | None = None
         self._rgb: bool = False
         self._endpoints = np.zeros((2, 2), dtype=float)
@@ -91,8 +90,7 @@ class ImageCanvas(FigureCanvas):
         self._hover: tuple[int, int] | None = None
         self._im = None
         self._colormap: str = "gray"
-        self._pixel_size: float = 1.0
-        self._unit: str = "None"
+        self._transform = PixelTransform()
 
         self.mpl_connect("button_press_event", self._on_press)
         self.mpl_connect("motion_notify_event", self._on_motion)
@@ -100,9 +98,8 @@ class ImageCanvas(FigureCanvas):
         self.mpl_connect("scroll_event", self._on_scroll)
         self.mpl_connect("axes_leave_event", self._on_axes_leave)
 
-    def _extent(self, h: int, w: int) -> list[float]:
-        ps = self._pixel_size
-        return [-0.5 * ps, (w - 0.5) * ps, (h - 0.5) * ps, -0.5 * ps]
+    def set_on_status(self, cb: callable) -> None:
+        self._on_status = cb
 
     def load(self, data: np.ndarray) -> None:
         self._data = data
@@ -110,28 +107,27 @@ class ImageCanvas(FigureCanvas):
         self._fig.clear()
         self._ax = self._fig.add_subplot(111)
 
+        h, w = data.shape[:2]
+        extent = self._transform.extent(h, w)
+        norm_str: str | None = None
         if self._rgb:
-            h, w = data.shape[:2]
-            display = self._to_display_rgb(data)
+            display, norm_str = self._prepare_rgb(data)
             self._im = self._ax.imshow(
-                display, origin="upper", interpolation="nearest",
-                extent=self._extent(h, w),
+                display, origin="upper", interpolation="nearest", extent=extent,
             )
         else:
-            h, w = data.shape
             self._im = self._ax.imshow(
                 data.astype(float), cmap=self._colormap,
-                origin="upper", interpolation="nearest",
-                extent=self._extent(h, w),
+                origin="upper", interpolation="nearest", extent=extent,
             )
             self._fig.colorbar(self._im, ax=self._ax, fraction=0.046, pad=0.04)
 
-        u = _fmt_unit(self._unit)
+        u = self._transform.format_unit()
         self._ax.set_xlabel(u)
         self._ax.set_ylabel(u)
+        ps = self._transform.pixel_size
         self._endpoints = np.array(
-            [[w * 0.1 * self._pixel_size, h * 0.5 * self._pixel_size],
-             [w * 0.9 * self._pixel_size, h * 0.5 * self._pixel_size]],
+            [[w * 0.1 * ps, h * 0.5 * ps], [w * 0.9 * ps, h * 0.5 * ps]],
             dtype=float,
         )
         self._cs_line = self._ep0 = self._ep1 = None
@@ -139,20 +135,29 @@ class ImageCanvas(FigureCanvas):
         self._init_artists()
         self._refresh_profile()
         self.draw()
+        return norm_str
 
     @staticmethod
-    def _to_display_rgb(data: np.ndarray) -> np.ndarray:
+    def _prepare_rgb(data: np.ndarray) -> tuple[np.ndarray, str]:
         d = data[:, :, :3].astype(float)
         if np.issubdtype(data.dtype, np.integer):
-            d = d / 255.0
-        elif d.max() > 1.0:
-            d = d / d.max()
-        return np.clip(d, 0.0, 1.0)
+            maxval = np.iinfo(data.dtype).max
+            d = d / maxval
+            norm_str = f"{data.dtype} ÷ {maxval}"
+        else:
+            lo, hi = float(d.min()), float(d.max())
+            if lo >= 0.0 and hi <= 1.0:
+                norm_str = f"float [{lo:.3g}, {hi:.3g}] — as-is"
+            else:
+                span = hi - lo
+                d = (d - lo) / span if span > 0 else np.zeros_like(d)
+                norm_str = f"float [{lo:.3g}, {hi:.3g}] → [0, 1]  (global min-max)"
+        return np.clip(d, 0.0, 1.0), norm_str
 
     def status_str(self) -> str:
         parts = []
-        ps = self._pixel_size
-        u = _fmt_unit(self._unit)
+        ps = self._transform.pixel_size
+        u = self._transform.format_unit()
         if self._hover is not None and self._data is not None:
             x, y = self._hover
             xp, yp = x * ps, y * ps
@@ -197,27 +202,9 @@ class ImageCanvas(FigureCanvas):
     def _refresh_profile(self) -> None:
         if self._data is None:
             return
-        ps = self._pixel_size
-        p0, p1 = self._endpoints / ps   # back to pixel coords for sampling
-        diff = p1 - p0
-        n = max(2, int(np.hypot(*diff)) + 1)
-        h, w = self._data.shape[:2]
-        xs = np.clip(np.linspace(p0[0], p1[0], n), 0, w - 1)
-        ys = np.clip(np.linspace(p0[1], p1[1], n), 0, h - 1)
-        dists = np.linspace(0.0, float(np.hypot(*diff)), n)  # in pixels; ProfileCanvas scales
-
-        if self._rgb:
-            n_ch = min(self._data.shape[2], 3)
-            values = np.stack([
-                ndimage.map_coordinates(
-                    self._data[:, :, c].astype(float), [ys, xs], order=1
-                )
-                for c in range(n_ch)
-            ])
-            self._profile.set_profile(dists, values)
-        else:
-            profile = ndimage.map_coordinates(self._data.astype(float), [ys, xs], order=1)
-            self._profile.set_profile(dists, profile)
+        p0_px, p1_px = self._transform.to_pixel(self._endpoints)
+        dists, values = compute_profile(self._data, p0_px, p1_px)
+        self._profile.set_profile(dists, values)
 
     # ------------------------------------------------------------------
     # Mouse interaction
@@ -233,10 +220,10 @@ class ImageCanvas(FigureCanvas):
     def _reset_zoom(self) -> None:
         if self._data is None:
             return
-        ps = self._pixel_size
         h, w = self._data.shape[:2]
-        self._ax.set_xlim(-0.5 * ps, (w - 0.5) * ps)
-        self._ax.set_ylim((h - 0.5) * ps, -0.5 * ps)
+        x0, x1, y0_bot, y1_top = self._transform.extent(h, w)
+        self._ax.set_xlim(x0, x1)
+        self._ax.set_ylim(y0_bot, y1_top)
         self.draw_idle()
 
     def _on_axes_leave(self, ev) -> None:
@@ -252,12 +239,12 @@ class ImageCanvas(FigureCanvas):
         yl = list(self._ax.get_ylim())
         xl = [xc + (xl[0] - xc) * factor, xc + (xl[1] - xc) * factor]
         yl = [yc + (yl[0] - yc) * factor, yc + (yl[1] - yc) * factor]
-        ps = self._pixel_size
         h, w = self._data.shape[:2]
-        xl[0] = max(xl[0], -0.5 * ps)
-        xl[1] = min(xl[1], (w - 0.5) * ps)
-        yl[0] = min(yl[0], (h - 0.5) * ps)
-        yl[1] = max(yl[1], -0.5 * ps)
+        x_min, x_max, y_bot, y_top = self._transform.extent(h, w)
+        xl[0] = max(xl[0], x_min)
+        xl[1] = min(xl[1], x_max)
+        yl[0] = min(yl[0], y_bot)
+        yl[1] = max(yl[1], y_top)
         if xl[0] >= xl[1] or yl[1] >= yl[0]:
             self._reset_zoom()
             return
@@ -285,12 +272,13 @@ class ImageCanvas(FigureCanvas):
         if self._data is None:
             return
 
-        ps = self._pixel_size
+        t = self._transform
+        h, w = self._data.shape[:2]
         if ev.inaxes is self._ax:
-            h, w = self._data.shape[:2]
+            xp, yp = t.to_pixel([ev.xdata, ev.ydata])
             self._hover = (
-                int(round(np.clip(ev.xdata / ps, 0, w - 1))),
-                int(round(np.clip(ev.ydata / ps, 0, h - 1))),
+                int(round(np.clip(xp, 0, w - 1))),
+                int(round(np.clip(yp, 0, h - 1))),
             )
         else:
             self._hover = None
@@ -298,9 +286,8 @@ class ImageCanvas(FigureCanvas):
         if self._dragging is not None:
             if ev.inaxes is not self._ax:
                 return
-            h, w = self._data.shape[:2]
-            x = float(np.clip(ev.xdata, -0.5 * ps, (w - 0.5) * ps))
-            y = float(np.clip(ev.ydata, -0.5 * ps, (h - 0.5) * ps))
+            x = t.clamp_x_physical(ev.xdata, w)
+            y = t.clamp_y_physical(ev.ydata, h)
             self._endpoints[self._dragging] = [x, y]
             self._sync_artists()
             self._refresh_profile()
@@ -310,19 +297,19 @@ class ImageCanvas(FigureCanvas):
             p0 = inv0.transform([x0_px, y0_px])
             p1 = inv0.transform([ev.x, ev.y])
             dx, dy = p1[0] - p0[0], p1[1] - p0[1]
-            h, w = self._data.shape[:2]
+            x_min, x_max, y_bot, y_top = t.extent(h, w)
             xl = [xlim0[0] - dx, xlim0[1] - dx]
             yl = [ylim0[0] - dy, ylim0[1] - dy]
             span_x = xl[1] - xl[0]
             span_y = yl[0] - yl[1]
-            if xl[0] < -0.5 * ps:
-                xl = [-0.5 * ps, -0.5 * ps + span_x]
-            elif xl[1] > (w - 0.5) * ps:
-                xl = [(w - 0.5) * ps - span_x, (w - 0.5) * ps]
-            if yl[1] < -0.5 * ps:
-                yl = [-0.5 * ps + span_y, -0.5 * ps]
-            elif yl[0] > (h - 0.5) * ps:
-                yl = [(h - 0.5) * ps, (h - 0.5) * ps - span_y]
+            if xl[0] < x_min:
+                xl = [x_min, x_min + span_x]
+            elif xl[1] > x_max:
+                xl = [x_max - span_x, x_max]
+            if yl[1] < y_top:
+                yl = [y_top + span_y, y_top]
+            elif yl[0] > y_bot:
+                yl = [y_bot, y_bot - span_y]
             self._ax.set_xlim(xl)
             self._ax.set_ylim(yl)
             self.draw_idle()
@@ -335,27 +322,29 @@ class ImageCanvas(FigureCanvas):
             self._pan_start = None
 
     def set_pixel_size(self, ps: float, unit: str) -> None:
+        new_t = PixelTransform(ps, unit)
+        if new_t == self._transform:
+            return
+        old_t = self._transform
+        self._transform = new_t
+        self._profile.set_pixel_size(ps, unit)
         if self._data is None:
-            self._pixel_size = ps
-            self._unit = unit
-            self._profile.set_pixel_size(ps, unit)
             return
         h, w = self._data.shape[:2]
-        ratio = ps / self._pixel_size
-        self._pixel_size = ps
-        self._unit = unit
+        ratio = new_t.pixel_size / old_t.pixel_size
         self._endpoints *= ratio
-        self._im.set_extent(self._extent(h, w))
-        u = _fmt_unit(unit)
+        self._im.set_extent(new_t.extent(h, w))
+        u = new_t.format_unit()
         self._ax.set_xlabel(u)
         self._ax.set_ylabel(u)
-        self._profile.set_pixel_size(ps, unit)
         self._reset_zoom()
         self._sync_artists()
         self._refresh_profile()
         self.draw_idle()
 
     def set_colormap(self, name: str) -> None:
+        if name == self._colormap:
+            return
         self._colormap = name
         if self._im is not None and not self._rgb:
             self._im.set_cmap(name)
@@ -367,20 +356,23 @@ class ImageCanvas(FigureCanvas):
             self.draw_idle()
 
     def reset_clim(self) -> None:
-        if self._im is not None and not self._rgb and self._data is not None:
-            d = self._data.astype(float)
-            self._im.set_clim(d.min(), d.max())
-            self.draw_idle()
+        if self._im is None or self._rgb or self._data is None:
+            return
+        stats = array_stats(self._data)
+        if stats is None or stats.finite_min is None:
+            return  # all-NaN/Inf: nothing sensible to reset to
+        self._im.set_clim(stats.finite_min, stats.finite_max)
+        self.draw_idle()
 
 
 class ImageView(BaseView, SpatialView, ColormappedView):
     VIEW_ID = "image"
     VIEW_NAME = "Image"
 
-    def __init__(self, on_status: callable) -> None:
+    def __init__(self) -> None:
         super().__init__()
         self._profile = ProfileCanvas()
-        self._canvas = ImageCanvas(self._profile, on_status)
+        self._canvas = ImageCanvas(self._profile)
 
         sp = QSplitter(Qt.Horizontal)
         sp.addWidget(self._canvas)
@@ -402,6 +394,12 @@ class ImageView(BaseView, SpatialView, ColormappedView):
         self._apply_btn.clicked.connect(self._apply_clim)
         self._reset_btn.clicked.connect(self._reset_clim)
 
+        self._norm_label = QLabel()
+        self._norm_label.setVisible(False)
+        self._anomaly_label = QLabel()
+        self._anomaly_label.setStyleSheet("color: red;")
+        self._anomaly_label.setVisible(False)
+
         ctrl = QWidget()
         ctrl_layout = QHBoxLayout(ctrl)
         ctrl_layout.setContentsMargins(6, 2, 6, 2)
@@ -412,6 +410,8 @@ class ImageView(BaseView, SpatialView, ColormappedView):
         ctrl_layout.addWidget(self._apply_btn)
         ctrl_layout.addWidget(self._reset_btn)
         ctrl_layout.addStretch()
+        ctrl_layout.addWidget(self._norm_label)
+        ctrl_layout.addWidget(self._anomaly_label)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -421,6 +421,8 @@ class ImageView(BaseView, SpatialView, ColormappedView):
 
     @classmethod
     def can_handle(cls, array: np.ndarray) -> bool:
+        if array.size == 0:
+            return False
         if array.ndim == 2:
             return np.issubdtype(array.dtype, np.number)
         if array.ndim == 3 and array.shape[2] == 3:
@@ -428,18 +430,38 @@ class ImageView(BaseView, SpatialView, ColormappedView):
         return False
 
     def set_data(self, array: np.ndarray) -> None:
-        self._canvas.load(array)
+        norm_str = self._canvas.load(array)
         self._vmin_edit.clear()
         self._vmax_edit.clear()
         rgb = array.ndim == 3
         for w in (self._vmin_edit, self._vmax_edit, self._apply_btn, self._reset_btn):
             w.setEnabled(not rgb)
+        if norm_str is not None:
+            self._norm_label.setText(f"norm: {norm_str}")
+            self._norm_label.setVisible(True)
+        else:
+            self._norm_label.setText("")
+            self._norm_label.setVisible(False)
+        stats = array_stats(array)
+        if stats is not None and stats.has_anomaly:
+            self._anomaly_label.setText(stats.anomaly_str())
+            self._anomaly_label.setVisible(True)
+        else:
+            self._anomaly_label.setText("")
+            self._anomaly_label.setVisible(False)
 
     def set_pixel_size(self, ps: float, unit: str) -> None:
         self._canvas.set_pixel_size(ps, unit)
 
     def set_colormap(self, name: str) -> None:
         self._canvas.set_colormap(name)
+
+    def set_on_status(self, cb: callable) -> None:
+        super().set_on_status(cb)
+        self._canvas.set_on_status(cb)
+
+    def refresh_status(self) -> None:
+        self._on_status(self._canvas.status_str())
 
     def _apply_clim(self) -> None:
         try:
@@ -454,5 +476,3 @@ class ImageView(BaseView, SpatialView, ColormappedView):
         self._vmax_edit.clear()
         self._canvas.reset_clim()
 
-    def idle_status(self) -> str:
-        return self._canvas.status_str()

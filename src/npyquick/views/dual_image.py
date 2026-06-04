@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QPushButton, QSplitter, QStackedWidget, QVBoxLayout, QWidget,
 )
 
+from ..core.stats import array_stats
 from .base import BaseView, ColormappedView, SpatialView
 
 
@@ -366,26 +367,29 @@ class DualImageView(BaseView, SpatialView, ColormappedView):
     VIEW_NAME = "Compare"
     ALWAYS_ENABLED = True
 
-    def __init__(self, on_status: callable) -> None:
+    def __init__(self) -> None:
         super().__init__()
-        self._on_status = on_status
         self._img1: np.ndarray | None = None
         self._img2: np.ndarray | None = None
         self._diff_mode: bool = False
         self._colormap: str = "gray"
 
+        # Proxy so canvases always use the current callback even after set_on_status
+        def _status_proxy(msg: str) -> None:
+            self._on_status(msg)
+
         self._canvas1 = DualImageCanvas(
-            "Img 1", on_status,
+            "Img 1", _status_proxy,
             on_endpoints_changed=self._on_img1_endpoints_changed,
             on_drop=lambda p: self._load_image(p, slot=1),
         )
         self._canvas2 = DualImageCanvas(
-            "Img 2", on_status,
+            "Img 2", _status_proxy,
             on_endpoints_changed=self._on_img2_endpoints_changed,
             on_drop=lambda p: self._load_image(p, slot=2),
         )
         self._diff_canvas = DualImageCanvas(
-            "Diff (Img1 − Img2)", on_status,
+            "Diff (Img1 − Img2)", _status_proxy,
             editable=False,
         )
         self._profile = DualProfileCanvas()
@@ -514,7 +518,7 @@ class DualImageView(BaseView, SpatialView, ColormappedView):
         s = QSettings("npyquick", "npyquick")
         start = s.value("last_dir", os.path.expanduser("~"))
         path, _ = QFileDialog.getOpenFileName(
-            self, f"Open Image {slot}", start, "NumPy files (*.npy)"
+            self, f"Open Image {slot}", start, "NumPy files (*.npy *.npz);;All files (*)"
         )
         if path:
             s.setValue("last_dir", os.path.dirname(os.path.abspath(path)))
@@ -572,13 +576,24 @@ class DualImageView(BaseView, SpatialView, ColormappedView):
         arrays = [a for a in (self._img1, self._img2) if a is not None]
         if not arrays:
             return 0.0, 1.0
-        return float(min(a.min() for a in arrays)), float(max(a.max() for a in arrays))
+        mins, maxs = [], []
+        for a in arrays:
+            s = array_stats(a)
+            if s is not None and s.finite_min is not None:
+                mins.append(s.finite_min)
+                maxs.append(s.finite_max)
+        if not mins:
+            return 0.0, 1.0
+        return min(mins), max(maxs)
 
     def _compute_diff_clim(self) -> tuple[float, float]:
         if self._img1 is None or self._img2 is None:
             return -1.0, 1.0
         diff = self._img1.astype(float) - self._img2.astype(float)
-        absmax = max(abs(float(diff.min())), abs(float(diff.max())))
+        s = array_stats(diff)
+        if s is None or s.finite_min is None:
+            return -1.0, 1.0
+        absmax = max(abs(s.finite_min), abs(s.finite_max))
         return -absmax, absmax
 
     def _refresh_diff(self) -> None:
@@ -687,13 +702,11 @@ class DualImageView(BaseView, SpatialView, ColormappedView):
         return True
 
     def set_data(self, array: np.ndarray) -> None:
-        pass
-
-    def on_primary_load(self, array: np.ndarray, path: str) -> None:
         if array.ndim != 2 or not np.issubdtype(array.dtype, np.number):
             return
         self._img1 = array
         self._img2 = None
+        self._img1_label.setText("—")
         self._img2_label.setText("—")
         self._align_btn.setEnabled(False)
         self._diff_btn.setEnabled(False)
@@ -701,10 +714,12 @@ class DualImageView(BaseView, SpatialView, ColormappedView):
         self._diff_mode = False
         self._mid_stack.setCurrentIndex(0)
         self._diff_clim_widget.setVisible(False)
-        self._img1_label.setText(os.path.basename(path))
         vmin, vmax = self._compute_img_clim()
         self._canvas1.load(self._img1, cmap=self._colormap, vmin=vmin, vmax=vmax)
         self._refresh_profile()
+
+    def refresh_status(self) -> None:
+        self._on_status("Compare — drag or open two 2D arrays of the same shape")
 
     def set_colormap(self, name: str) -> None:
         self._colormap = name
@@ -717,5 +732,3 @@ class DualImageView(BaseView, SpatialView, ColormappedView):
         self._diff_canvas.set_pixel_size(ps, unit)
         self._profile.set_pixel_size(ps, unit)
 
-    def idle_status(self) -> str:
-        return "Compare — open two .npy files of the same shape"

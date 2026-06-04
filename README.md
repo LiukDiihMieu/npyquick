@@ -1,53 +1,58 @@
 # npyquick
 
-A fast, clean NumPy array viewer built with PySide6 and Matplotlib.
+A fast, lightweight GUI viewer for NumPy arrays (`.npy` / `.npz`), built with PySide6 and Matplotlib.
 
-## Features
+## Installation
 
-### File handling
-- Open `.npy` files via menu (Ctrl+O) or drag and drop
-- Remembers last-used directory across sessions
+**With conda (recommended):**
+```bash
+conda env create -f environment.yml
+conda activate npyquick
+```
 
-### Image view (2D grayscale and RGB)
-- Supports `(H, W)` numeric arrays and `(H, W, 3)` RGB arrays
-- Scroll to zoom, left-click drag to pan, double-click to reset zoom
-- Colormap switching via **View › Colormap** menu (grayscale only): gray, viridis, plasma, inferno, magma, cividis, hot, coolwarm, RdBu, turbo
-- Manual vmin/vmax control with Apply and Reset buttons
+**With pip only:**
+```bash
+pip install -e .
+```
 
-### Cross-section profile
-- Adjustable line with two draggable endpoints overlaid on the image
-- Live profile plot beside the image
-- Grayscale: single intensity line; RGB: three colored lines (R/G/B)
-
-### Status bar
-- Hover pixel coordinates and value (`val` for grayscale, `R G B` for RGB)
-- Endpoint positions always visible alongside hover info
-- Switches to array shape/dtype info when Table tab is active
-
-### Table view
-- Fallback for any array shape or dtype
-- Lazy loading via `QAbstractTableModel` — safe for very large arrays (capped at 10,000 rows × 10,000 columns)
-- `(H, W, 3)` RGB arrays shown as three side-by-side channel tables (R, G, B)
-
-### Architecture
-- Clean MVC separation: `NpyDataModel`, `BaseView` subclasses, thin `MainWindow`
-- Tab enable/disable driven by `compatible_views()` — invalid views are greyed out, never shown with errors
-- Easy to extend: add a new `views/foo.py` and register it in `app.py`
-
-## TODO
-
-- [ ] `.npz` support — array picker for multi-array files
-- [ ] 1D array / time series view
-- [ ] 3D point cloud view (`(N, 3)` arrays)
-- [ ] Handle `>2D` arrays gracefully (slice selector)
-
-## Requirements
-
-See `requirements.txt`. Built on PySide6, Matplotlib, NumPy, SciPy.
+Dependencies: Python ≥ 3.10, NumPy, SciPy, Matplotlib, PySide6.
 
 ## Usage
 
 ```bash
-python -m npyquick              # open GUI
-python -m npyquick path/to.npy  # open with file
+npyquick                        # open GUI
+npyquick path/to/file.npy       # open with a file
+npyquick path/to/file.npz       # open a multi-array archive
 ```
+
+Files can also be opened via **File › Open** (Ctrl+O) or by dragging and dropping onto the window.
+
+## Features
+
+### Image view
+Displays 2D and RGB arrays as an interactive image.
+
+**Supported formats:**
+- 2D numeric arrays — any dtype (float32/64, uint8/16, int16/32, …)
+- `(H, W, 3)` RGB arrays — uint8, uint16, and float32/64
+
+**Normalization (RGB only):** integer types are scaled by their dtype maximum (e.g. uint16 ÷ 65535); float arrays outside [0, 1] are globally min-max stretched. The applied strategy is shown in the control bar.
+
+**Interactions:**
+- Scroll to zoom, left-drag to pan, double-click to reset zoom
+- Two draggable endpoints define a cross-section line; the live intensity profile is shown in a side panel
+- Colormap selector (**View › Colormap**) for grayscale images: gray, viridis, plasma, inferno, magma, cividis, hot, coolwarm, RdBu, turbo
+- Manual brightness range via vmin / vmax inputs
+
+### Table view
+Fallback for any array shape or dtype that the image view cannot display (1D, >2D, non-numeric, empty, scalar). Rows and columns are capped at 10 000 to keep large arrays usable.
+
+### .npz support
+When a `.npz` archive contains multiple arrays, a dropdown appears above the tabs listing each key with its shape and dtype. Switching the selection immediately reloads the active view.
+
+## TODO
+
+- [ ] Histogram panel
+- [ ] `>2D` array slicer
+- [ ] 1D / time-series view
+- [ ] Complex array support (real / imaginary / magnitude / phase)
