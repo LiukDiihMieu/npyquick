@@ -5,7 +5,7 @@ from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QHBoxLayout, QLabel, QVBoxLayout, QWidget,
+    QCheckBox, QComboBox, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget,
 )
 
 from ..core.stats import array_stats
@@ -24,14 +24,18 @@ class HistogramCanvas(FigureCanvas):
         self._n_bins: int | str = "auto"
         self._log: bool = False
         self._array: np.ndarray | None = None
+        self._finite: np.ndarray | None = None
         self._edges: np.ndarray | None = None
         self._counts: np.ndarray | None = None
         self._clim: tuple[float, float] | None = None
         self._vline_lo = None
         self._vline_hi = None
+        self._vtext_lo = None
+        self._vtext_hi = None
 
         self.mpl_connect("motion_notify_event", self._on_motion)
         self.mpl_connect("axes_leave_event", self._on_axes_leave)
+        self.mpl_connect("scroll_event", self._on_scroll)
 
     def set_on_status(self, cb: callable) -> None:
         self._on_status = cb
@@ -42,7 +46,7 @@ class HistogramCanvas(FigureCanvas):
     def plot(self, array: np.ndarray) -> None:
         self._array = array
         flat = array.flatten()
-        finite = flat[np.isfinite(flat)] if np.issubdtype(array.dtype, np.inexact) else flat
+        self._finite = flat[np.isfinite(flat)] if np.issubdtype(array.dtype, np.inexact) else flat
 
         self._ax.cla()
         self._ax.set_xlabel("Value")
@@ -51,6 +55,9 @@ class HistogramCanvas(FigureCanvas):
         self._counts = None
         self._vline_lo = None
         self._vline_hi = None
+        self._vtext_lo = None
+        self._vtext_hi = None
+        finite = self._finite
 
         if finite.size == 0:
             self._ax.text(
@@ -75,6 +82,15 @@ class HistogramCanvas(FigureCanvas):
                 self._vline_hi = self._ax.axvline(
                     vmax, color="tomato", lw=1.5, ls="--", alpha=0.85, zorder=5
                 )
+                tr = self._ax.get_xaxis_transform()
+                self._vtext_lo = self._ax.text(
+                    vmin, 0.98, "vmin", transform=tr,
+                    ha="center", va="top", color="tomato", fontsize=7,
+                )
+                self._vtext_hi = self._ax.text(
+                    vmax, 0.98, "vmax", transform=tr,
+                    ha="center", va="top", color="tomato", fontsize=7,
+                )
 
         self._ax.set_yscale("log" if self._log else "linear")
         self.draw_idle()
@@ -96,10 +112,11 @@ class HistogramCanvas(FigureCanvas):
     def update_clim_marker(self, vmin: float | None, vmax: float | None) -> None:
         """Live-update vlines on an already-rendered histogram."""
         self._clim = (vmin, vmax) if vmin is not None and vmax is not None else None
-        for line in (self._vline_lo, self._vline_hi):
-            if line is not None:
-                line.remove()
+        for artist in (self._vline_lo, self._vline_hi, self._vtext_lo, self._vtext_hi):
+            if artist is not None:
+                artist.remove()
         self._vline_lo = self._vline_hi = None
+        self._vtext_lo = self._vtext_hi = None
         if self._clim is not None and self._edges is not None:
             vmin, vmax = self._clim
             self._vline_lo = self._ax.axvline(
@@ -107,6 +124,15 @@ class HistogramCanvas(FigureCanvas):
             )
             self._vline_hi = self._ax.axvline(
                 vmax, color="tomato", lw=1.5, ls="--", alpha=0.85, zorder=5
+            )
+            tr = self._ax.get_xaxis_transform()
+            self._vtext_lo = self._ax.text(
+                vmin, 0.98, "vmin", transform=tr,
+                ha="center", va="top", color="tomato", fontsize=7,
+            )
+            self._vtext_hi = self._ax.text(
+                vmax, 0.98, "vmax", transform=tr,
+                ha="center", va="top", color="tomato", fontsize=7,
             )
         self.draw_idle()
 
@@ -119,6 +145,28 @@ class HistogramCanvas(FigureCanvas):
 
     def _on_axes_leave(self, ev) -> None:
         self._on_status(self._idle_status)
+
+    def _on_scroll(self, ev) -> None:
+        if ev.inaxes is not self._ax or self._edges is None:
+            return
+        factor = 0.8 if ev.step > 0 else 1.25
+        xc = ev.xdata
+        xl = self._ax.get_xlim()
+        self._ax.set_xlim(xc + (xl[0] - xc) * factor, xc + (xl[1] - xc) * factor)
+        self.draw_idle()
+
+    def xlim_full(self) -> None:
+        if self._edges is None:
+            return
+        self._ax.set_xlim(self._edges[0], self._edges[-1])
+        self.draw_idle()
+
+    def xlim_robust(self) -> None:
+        if self._finite is None or self._finite.size < 2:
+            return
+        lo, hi = np.percentile(self._finite, [2, 98])
+        self._ax.set_xlim(lo, hi)
+        self.draw_idle()
 
 
 class HistogramView(BaseView):
@@ -138,6 +186,15 @@ class HistogramView(BaseView):
         self._log_check = QCheckBox("Log scale")
         self._log_check.toggled.connect(self._canvas.set_log_scale)
 
+        self._full_btn = QPushButton("Full")
+        self._full_btn.setFixedWidth(48)
+        self._full_btn.clicked.connect(self._canvas.xlim_full)
+
+        self._robust_btn = QPushButton("Robust")
+        self._robust_btn.setFixedWidth(56)
+        self._robust_btn.setToolTip("Set x-range to p2–p98")
+        self._robust_btn.clicked.connect(self._canvas.xlim_robust)
+
         self._stats_label = QLabel()
         self._stats_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
 
@@ -152,6 +209,10 @@ class HistogramView(BaseView):
         ctrl_layout.addWidget(self._bins_combo)
         ctrl_layout.addSpacing(12)
         ctrl_layout.addWidget(self._log_check)
+        ctrl_layout.addSpacing(16)
+        ctrl_layout.addWidget(QLabel("X range:"))
+        ctrl_layout.addWidget(self._full_btn)
+        ctrl_layout.addWidget(self._robust_btn)
         ctrl_layout.addStretch()
         ctrl_layout.addWidget(self._stats_label)
         ctrl_layout.addSpacing(8)
