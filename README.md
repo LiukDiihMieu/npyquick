@@ -5,8 +5,9 @@ A fast, clean NumPy array viewer built with PySide6 and Matplotlib.
 ## Features
 
 ### File handling
-- Open `.npy` files via menu (Ctrl+O) or drag and drop
-- Remembers last-used directory across sessions
+- Open `.npy` and `.npz` files via menu (Ctrl+O) or drag and drop
+- `.npz` files with multiple arrays show an array picker dropdown
+- Remembers last-used directory, colormap, and window size across sessions
 
 ### Image view (2D grayscale and RGB)
 - Supports `(H, W)` numeric arrays and `(H, W, 3)` RGB arrays
@@ -36,7 +37,6 @@ A fast, clean NumPy array viewer built with PySide6 and Matplotlib.
 
 ## TODO
 
-- [ ] `.npz` support — array picker for multi-array files
 - [ ] 1D array / time series view
 - [ ] 3D point cloud view (`(N, 3)` arrays)
 - [ ] Handle `>2D` arrays gracefully (slice selector)

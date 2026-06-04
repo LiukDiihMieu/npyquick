@@ -6,7 +6,10 @@ import numpy as np
 from PySide6.QtCore import QSettings, QUrl
 from PySide6.QtGui import QAction, QActionGroup
 from PySide6.QtWidgets import (
+    QComboBox,
     QFileDialog,
+    QHBoxLayout,
+    QLabel,
     QMainWindow,
     QStackedWidget,
     QStatusBar,
@@ -47,12 +50,13 @@ class MainWindow(QMainWindow):
         self._pixel_size: float = 1.0
         self._pixel_unit: str = "None"
         self._pixel_expr: str = "1"
+        self._current_path: str = ""
         self._sb = QStatusBar()
         self.setStatusBar(self._sb)
 
         self._build_menu()
         self._build_central()
-        self._sb.showMessage("File › Open  (Ctrl+O)  to load a .npy file.")
+        self._sb.showMessage("File › Open  (Ctrl+O)  to load a .npy or .npz file.")
 
         geom = _s.value("geometry")
         if geom:
@@ -118,10 +122,22 @@ class MainWindow(QMainWindow):
             self._tabs.addTab(v.VIEW_NAME)
         self._tabs.currentChanged.connect(self._on_tab_changed)
 
+        self._array_combo = QComboBox()
+        self._array_combo.setSizeAdjustPolicy(QComboBox.AdjustToContents)
+        self._array_combo.currentIndexChanged.connect(self._on_array_selected)
+        self._array_bar = QWidget()
+        bar_layout = QHBoxLayout(self._array_bar)
+        bar_layout.setContentsMargins(6, 2, 6, 2)
+        bar_layout.addWidget(QLabel("Array:"))
+        bar_layout.addWidget(self._array_combo)
+        bar_layout.addStretch()
+        self._array_bar.setVisible(False)
+
         container = QWidget()
         layout = QVBoxLayout(container)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
+        layout.addWidget(self._array_bar)
         layout.addWidget(self._tabs)
         layout.addWidget(self._stack)
         self.setCentralWidget(container)
@@ -154,7 +170,7 @@ class MainWindow(QMainWindow):
     def open_file(self) -> None:
         start = self._last_dir if os.path.isdir(self._last_dir) else os.path.expanduser("~")
         path, _ = QFileDialog.getOpenFileName(
-            self, "Open NPY File", start, "NumPy files (*.npy);;All files (*)"
+            self, "Open NumPy File", start, "NumPy files (*.npy *.npz);;All files (*)"
         )
         if path:
             self.load_file(path)
@@ -166,21 +182,44 @@ class MainWindow(QMainWindow):
             self._sb.showMessage(f"Error loading {path}: {exc}")
             return
 
-        array = self._model.array
-        compatible = [v.VIEW_ID for v in self._views if v.can_handle(array)]
-
-        for v in self._views:
-            if v.VIEW_ID in compatible:
-                v.set_data(array)
-
-        self._apply_pixel_size()
-        self._apply_colormap(self._colormap)
-        self._set_tabs_enabled(compatible)
-
+        self._current_path = path
         self._last_dir = os.path.dirname(os.path.abspath(path))
         QSettings("npyquick", "npyquick").setValue("last_dir", self._last_dir)
         self.setWindowTitle(f"npyquick — {path}")
-        self._sb.showMessage(f"{os.path.basename(path)}  |  {_format_array_summary(array)}")
+
+        arrays = self._model.available_arrays()
+        if len(arrays) > 1:
+            self._array_combo.blockSignals(True)
+            self._array_combo.clear()
+            for key, arr in arrays.items():
+                self._array_combo.addItem(
+                    f"{key}   {list(arr.shape)}   {arr.dtype}", key
+                )
+            self._array_combo.blockSignals(False)
+            self._array_bar.setVisible(True)
+        else:
+            self._array_bar.setVisible(False)
+
+        self._refresh_views()
+
+    def _refresh_views(self) -> None:
+        array = self._model.array
+        compatible = [v.VIEW_ID for v in self._views if v.can_handle(array)]
+        for v in self._views:
+            if v.VIEW_ID in compatible:
+                v.set_data(array)
+        self._apply_pixel_size()
+        self._apply_colormap(self._colormap)
+        self._set_tabs_enabled(compatible)
+        self._sb.showMessage(
+            f"{os.path.basename(self._current_path)}  |  {_format_array_summary(array)}"
+        )
+
+    def _on_array_selected(self, index: int) -> None:
+        key = self._array_combo.itemData(index)
+        if key is not None:
+            self._model.select_array(key)
+            self._refresh_views()
 
     # ------------------------------------------------------------------
     # Pixel size
@@ -212,7 +251,7 @@ class MainWindow(QMainWindow):
 
     def dragEnterEvent(self, ev) -> None:
         urls = ev.mimeData().urls()
-        if urls and all(QUrl.toLocalFile(u).endswith(".npy") for u in urls):
+        if urls and all(QUrl.toLocalFile(u).endswith((".npy", ".npz")) for u in urls):
             ev.acceptProposedAction()
 
     def dropEvent(self, ev) -> None:
