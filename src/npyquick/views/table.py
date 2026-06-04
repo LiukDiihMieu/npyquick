@@ -6,6 +6,7 @@ from PySide6.QtWidgets import (
     QLabel, QSplitter, QStackedWidget, QTableView, QVBoxLayout, QWidget,
 )
 
+from ..core.stats import array_stats
 from .base import BaseView
 
 
@@ -134,6 +135,9 @@ class RawTableView(BaseView):
             self._status = f"shape {array.shape}  dtype {array.dtype}  —  showing {rows}×{cols}"
             if rows < actual_rows:
                 self._status += f"  (truncated from {actual_rows} rows)"
+        stats = array_stats(array)
+        if stats is not None and stats.has_anomaly:
+            self._status += f"  |  {stats.anomaly_str()}"
         self._info.setText(self._status)
 
     def refresh_status(self) -> None:

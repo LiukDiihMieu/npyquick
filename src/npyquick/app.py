@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from .core.stats import array_stats
 from .model import NpyDataModel
 
 
@@ -25,8 +26,12 @@ def _format_array_summary(array: np.ndarray) -> str:
     parts = [f"shape {array.shape}", f"dtype {array.dtype}"]
     if array.size == 0:
         parts.append("empty")
-    elif np.issubdtype(array.dtype, np.number):
-        parts.append(f"range [{array.min():.4g}, {array.max():.4g}]")
+    else:
+        stats = array_stats(array)
+        if stats is not None:
+            parts.append(stats.range_str())
+            if stats.has_anomaly:
+                parts.append(stats.anomaly_str())
     return "  |  ".join(parts)
 from .views.base import ColormappedView, SpatialView
 from .views.image import ImageView

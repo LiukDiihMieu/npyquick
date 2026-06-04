@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
 
 from ..core.coord import PixelTransform
 from ..core.profile import compute_profile
+from ..core.stats import array_stats
 from .base import BaseView, ColormappedView, SpatialView
 
 
@@ -355,10 +356,13 @@ class ImageCanvas(FigureCanvas):
             self.draw_idle()
 
     def reset_clim(self) -> None:
-        if self._im is not None and not self._rgb and self._data is not None:
-            d = self._data.astype(float)
-            self._im.set_clim(d.min(), d.max())
-            self.draw_idle()
+        if self._im is None or self._rgb or self._data is None:
+            return
+        stats = array_stats(self._data)
+        if stats is None or stats.finite_min is None:
+            return  # all-NaN/Inf: nothing sensible to reset to
+        self._im.set_clim(stats.finite_min, stats.finite_max)
+        self.draw_idle()
 
 
 class ImageView(BaseView, SpatialView, ColormappedView):
@@ -392,6 +396,9 @@ class ImageView(BaseView, SpatialView, ColormappedView):
 
         self._norm_label = QLabel()
         self._norm_label.setVisible(False)
+        self._anomaly_label = QLabel()
+        self._anomaly_label.setStyleSheet("color: red;")
+        self._anomaly_label.setVisible(False)
 
         ctrl = QWidget()
         ctrl_layout = QHBoxLayout(ctrl)
@@ -404,6 +411,7 @@ class ImageView(BaseView, SpatialView, ColormappedView):
         ctrl_layout.addWidget(self._reset_btn)
         ctrl_layout.addStretch()
         ctrl_layout.addWidget(self._norm_label)
+        ctrl_layout.addWidget(self._anomaly_label)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -434,6 +442,13 @@ class ImageView(BaseView, SpatialView, ColormappedView):
         else:
             self._norm_label.setText("")
             self._norm_label.setVisible(False)
+        stats = array_stats(array)
+        if stats is not None and stats.has_anomaly:
+            self._anomaly_label.setText(stats.anomaly_str())
+            self._anomaly_label.setVisible(True)
+        else:
+            self._anomaly_label.setText("")
+            self._anomaly_label.setVisible(False)
 
     def set_pixel_size(self, ps: float, unit: str) -> None:
         self._canvas.set_pixel_size(ps, unit)
