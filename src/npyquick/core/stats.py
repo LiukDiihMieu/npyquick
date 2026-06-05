@@ -59,19 +59,18 @@ def array_stats(array: np.ndarray) -> ArrayStats | None:
 
     Returns None for non-numeric, complex, or empty arrays.
     Integer arrays cannot contain NaN/Inf, so anomaly counts are always 0.
-    Large arrays are subsampled (range/counts become approximate, ``sampled=True``)
-    to avoid materializing a full finite mask.
+    Arrays whose element count exceeds HIST_MAX_SAMPLES are subsampled
+    (range/counts become approximate, ``sampled=True``) to avoid materializing a
+    full finite mask. This is a compute budget independent of the byte-based I/O
+    threshold; downsample_stride returns 1 when within budget.
     """
     if not is_real_numeric(array) or array.size == 0:
         return None
 
-    sampled = limits.is_large(array)
-    if sampled:
-        flat = array.reshape(-1)
-        stride = limits.downsample_stride(flat.size, limits.HIST_MAX_SAMPLES)
-        sample = np.asarray(flat[::stride])
-    else:
-        sample = array
+    flat = array.reshape(-1)
+    stride = limits.downsample_stride(flat.size, limits.HIST_MAX_SAMPLES)
+    sampled = stride > 1
+    sample = np.asarray(flat[::stride]) if sampled else array
 
     if np.issubdtype(array.dtype, np.integer):
         lo, hi = float(sample.min()), float(sample.max())

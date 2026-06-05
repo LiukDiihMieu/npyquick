@@ -155,3 +155,7 @@ restarting the file manager or logging out and back in before the menu updates.
 - [ ] `>2D` array slicer
 - [ ] 1D / time-series view
 - [ ] Complex array support (real / imaginary / magnitude / phase)
+- [ ] Image view: drop the redundant float64 conversion in `ImageCanvas` — let
+      matplotlib display `uint8`/`int16`/`uint16`/`float32` grayscale and `uint8`
+      RGB natively (avoids a 2–8× memory blow-up); confine `astype(float)` to the
+      profile sampler that actually needs it

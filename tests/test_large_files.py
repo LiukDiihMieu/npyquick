@@ -46,14 +46,17 @@ def test_zero_d_npy_not_memmapped_even_when_large(tmp_path, monkeypatch):
     assert m.array.shape == ()
 
 
-def test_structured_npy_not_memmapped_even_when_large(tmp_path, monkeypatch):
+def test_structured_npy_memmapped_when_large(tmp_path, monkeypatch):
+    # Structured dtypes are memory-mappable, so a large one is mapped like any
+    # other array (only the table view handles it downstream).
     monkeypatch.setattr(limits, "LARGE_BYTES", 0)
     p = tmp_path / "rec.npy"
     rec = np.array([(1, 2.0), (3, 4.0)], dtype=[("a", "i4"), ("b", "f8")])
     np.save(p, rec)
     m = NpyDataModel()
     m.load(str(p))
-    assert not isinstance(m.array, np.memmap)
+    assert isinstance(m.array, np.memmap)
+    assert m.array.dtype.names == ("a", "b")
 
 
 def test_large_npy_mmap_failure_does_not_fall_back(tmp_path, monkeypatch):
@@ -106,7 +109,8 @@ def test_npz_select_materializes_only_chosen(tmp_path):
 # ---------------------------------------------------------------------------
 
 def test_array_stats_sampled_flag_and_approx_range(monkeypatch):
-    monkeypatch.setattr(limits, "LARGE_BYTES", 0)
+    # Sampling is gated on element count vs HIST_MAX_SAMPLES, not on bytes:
+    # LARGE_BYTES stays at its (huge) default to prove the decoupling.
     monkeypatch.setattr(limits, "HIST_MAX_SAMPLES", 8)
     arr = np.arange(100, dtype=np.float32)
     st = array_stats(arr)
@@ -116,7 +120,6 @@ def test_array_stats_sampled_flag_and_approx_range(monkeypatch):
 
 
 def test_array_stats_sampled_anomaly_is_qualitative(monkeypatch):
-    monkeypatch.setattr(limits, "LARGE_BYTES", 0)
     monkeypatch.setattr(limits, "HIST_MAX_SAMPLES", 50)
     arr = np.arange(100, dtype=np.float32)
     arr[::3] = np.nan
@@ -139,7 +142,6 @@ def test_array_stats_small_path_unchanged():
 # ---------------------------------------------------------------------------
 
 def test_finite_sample_respects_budget(monkeypatch):
-    monkeypatch.setattr(limits, "LARGE_BYTES", 0)
     monkeypatch.setattr(limits, "HIST_MAX_SAMPLES", 10)
     arr = np.arange(100, dtype=np.float32)
     finite, n_total, n_used = finite_sample(arr)
@@ -149,7 +151,6 @@ def test_finite_sample_respects_budget(monkeypatch):
 
 
 def test_histogram_sample_label_visible_when_sampled(monkeypatch):
-    monkeypatch.setattr(limits, "LARGE_BYTES", 0)
     monkeypatch.setattr(limits, "HIST_MAX_SAMPLES", 10)
     v = HistogramView()
     v.set_data(np.arange(100, dtype=np.float32))
@@ -168,7 +169,8 @@ def test_histogram_sample_label_hidden_when_small():
 # ---------------------------------------------------------------------------
 
 def test_image_downsamples_large_array(monkeypatch):
-    monkeypatch.setattr(limits, "LARGE_BYTES", 0)
+    # Downsampling is gated on spatial pixel count vs IMAGE_MAX_PIXELS, not on
+    # bytes: LARGE_BYTES stays at its default to prove the decoupling.
     monkeypatch.setattr(limits, "IMAGE_MAX_PIXELS", 16)
     iv = ImageView()
     arr = np.arange(64, dtype=np.float32).reshape(8, 8)
@@ -188,7 +190,6 @@ def test_image_no_downsample_when_small():
 
 
 def test_image_hover_reads_full_resolution(monkeypatch):
-    monkeypatch.setattr(limits, "LARGE_BYTES", 0)
     monkeypatch.setattr(limits, "IMAGE_MAX_PIXELS", 16)
     iv = ImageView()
     arr = np.arange(64, dtype=np.float32).reshape(8, 8)
@@ -200,7 +201,6 @@ def test_image_hover_reads_full_resolution(monkeypatch):
 
 def test_image_profile_input_is_float(monkeypatch):
     """Display array handed to compute_profile is already float (no per-drag astype)."""
-    monkeypatch.setattr(limits, "LARGE_BYTES", 0)
     monkeypatch.setattr(limits, "IMAGE_MAX_PIXELS", 16)
     iv = ImageView()
     iv.set_data(np.arange(64, dtype=np.float32).reshape(8, 8))

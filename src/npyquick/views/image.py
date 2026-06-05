@@ -111,10 +111,12 @@ class ImageCanvas(FigureCanvas):
         self._ax = self._fig.add_subplot(111)
 
         h, w = data.shape[:2]
-        # Downsample large arrays once, before any astype, so a memmap is never
-        # fully read into RAM. extent stays full-resolution so coordinates and
-        # pixel-size labels remain correct.
-        s = limits.stride_for(h * w, limits.IMAGE_MAX_PIXELS) if limits.is_large(data) else 1
+        # Downsample by spatial pixel count, before any astype, so a memmap is
+        # never fully read into RAM. This is a rendering budget independent of
+        # the byte-based I/O threshold; stride_for returns 1 when within budget.
+        # extent stays full-resolution so coordinates and pixel-size labels
+        # remain correct.
+        s = limits.stride_for(h * w, limits.IMAGE_MAX_PIXELS)
         self._stride = s
         downsample_str: str | None = None
         if s > 1:

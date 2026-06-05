@@ -51,12 +51,15 @@ class NpyDataModel:
 
     @staticmethod
     def _load_npy(path: str, meta: MemberMeta) -> np.ndarray:
-        structured = meta.dtype.names is not None
+        # 0-d arrays are always tiny and pointless to map; everything else,
+        # including structured dtypes, is memory-mappable and should be mapped
+        # when large. (Structured arrays load fine here but only the table view
+        # handles them — image/histogram/stats gate on is_real_numeric.)
         zero_d = meta.shape == ()
-        if structured or zero_d or meta.nbytes <= limits.LARGE_BYTES:
+        if zero_d or meta.nbytes <= limits.LARGE_BYTES:
             return np.load(path, allow_pickle=False)
-        # Large numeric array: memory-map. Do NOT silently fall back to a full
-        # load on failure — that would defeat the protection and risk OOM.
+        # Large array: memory-map. Do NOT silently fall back to a full load on
+        # failure — that would defeat the protection and risk OOM.
         try:
             return np.load(path, mmap_mode="r", allow_pickle=False)
         except (ValueError, OSError) as exc:

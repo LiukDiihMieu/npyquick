@@ -11,12 +11,6 @@ def test_array_nbytes_matches_numpy():
     assert limits.array_nbytes((10,), np.uint8) == 10
 
 
-def test_is_large_threshold(monkeypatch):
-    monkeypatch.setattr(limits, "LARGE_BYTES", 100)
-    assert not limits.is_large(np.zeros(10, np.float32))     # 40 bytes
-    assert limits.is_large(np.zeros(100, np.float32))        # 400 bytes
-
-
 def test_stride_for_2d_keeps_within_budget():
     # 10_000 pixels, budget 100 -> stride ceil(sqrt(100)) = 10
     assert limits.stride_for(10_000, 100) == 10

@@ -11,10 +11,13 @@ LARGE_BYTES = 512 * 1024**2          # 512 MiB
 # materialize into RAM; refuse anything above this hard ceiling.
 NPZ_MEMBER_CEILING = 2 * 1024**3     # 2 GiB
 
-# Rendering budgets (these are downsampling/sampling targets, NOT the
-# definition of "large"). 2048x2048 (~4.2M) stays below IMAGE_MAX_PIXELS.
-IMAGE_MAX_PIXELS = 5_000_000
-HIST_MAX_SAMPLES = 5_000_000
+# Rendering/compute budgets. These are independent of LARGE_BYTES: I/O cost
+# scales with bytes (mmap / npz ceiling decisions use LARGE_BYTES), while
+# rendering and statistics cost scales with element count. Both budgets are set
+# to 4096^2, so realistic images (<=4096x4096, up to 384 MB RGB float64) render
+# and are summarized at full resolution; only genuinely huge arrays downsample.
+IMAGE_MAX_PIXELS = 16_777_216        # 4096 * 4096 spatial pixels (channels excluded)
+HIST_MAX_SAMPLES = 16_777_216        # 4096 * 4096 flattened samples
 TABLE_MAX_PER_AXIS = 2_000
 
 
@@ -22,11 +25,6 @@ def array_nbytes(shape, dtype) -> int:
     """Bytes an array of this shape/dtype would occupy, from header metadata."""
     count = int(np.prod(shape, dtype=np.int64))
     return count * np.dtype(dtype).itemsize
-
-
-def is_large(array: np.ndarray) -> bool:
-    """True when the array exceeds the unified large-file threshold."""
-    return array.nbytes > LARGE_BYTES
 
 
 def stride_for(n_total: int, budget: int) -> int:

@@ -18,16 +18,15 @@ _BIN_OPTIONS = ["auto", "64", "128", "256", "512"]
 def finite_sample(array: np.ndarray) -> tuple[np.ndarray, int, int]:
     """Return (finite_values, n_total, n_used) for histogram and statistics.
 
-    Large arrays are subsampled to HIST_MAX_SAMPLES before the finite mask so a
-    memmap is never fully read. n_used is the sample size before masking.
+    Subsampling is driven by element count against HIST_MAX_SAMPLES (a compute
+    budget independent of the byte-based I/O threshold), applied before the
+    finite mask so a memmap is never fully read. downsample_stride returns 1
+    when within budget. n_used is the sample size before masking.
     """
     flat = array.reshape(-1)
     n_total = flat.size
-    if limits.is_large(array):
-        stride = limits.downsample_stride(n_total, limits.HIST_MAX_SAMPLES)
-        sample = np.asarray(flat[::stride])
-    else:
-        sample = np.asarray(flat)
+    stride = limits.downsample_stride(n_total, limits.HIST_MAX_SAMPLES)
+    sample = np.asarray(flat[::stride])
     n_used = sample.size
     if np.issubdtype(array.dtype, np.inexact):
         finite = sample[np.isfinite(sample)]
