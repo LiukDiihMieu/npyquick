@@ -8,10 +8,32 @@ from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget,
 )
 
+from ..core import limits
 from ..core.stats import array_stats, is_real_numeric
 from .base import BaseView
 
 _BIN_OPTIONS = ["auto", "64", "128", "256", "512"]
+
+
+def finite_sample(array: np.ndarray) -> tuple[np.ndarray, int, int]:
+    """Return (finite_values, n_total, n_used) for histogram and statistics.
+
+    Large arrays are subsampled to HIST_MAX_SAMPLES before the finite mask so a
+    memmap is never fully read. n_used is the sample size before masking.
+    """
+    flat = array.reshape(-1)
+    n_total = flat.size
+    if limits.is_large(array):
+        stride = limits.downsample_stride(n_total, limits.HIST_MAX_SAMPLES)
+        sample = np.asarray(flat[::stride])
+    else:
+        sample = np.asarray(flat)
+    n_used = sample.size
+    if np.issubdtype(array.dtype, np.inexact):
+        finite = sample[np.isfinite(sample)]
+    else:
+        finite = sample
+    return finite, n_total, n_used
 
 
 class HistogramCanvas(FigureCanvas):
@@ -25,6 +47,8 @@ class HistogramCanvas(FigureCanvas):
         self._log: bool = False
         self._array: np.ndarray | None = None
         self._finite: np.ndarray | None = None
+        self._n_total: int = 0
+        self._n_used: int = 0
         self._edges: np.ndarray | None = None
         self._counts: np.ndarray | None = None
         self._clim: tuple[float, float] | None = None
@@ -45,8 +69,8 @@ class HistogramCanvas(FigureCanvas):
 
     def plot(self, array: np.ndarray) -> None:
         self._array = array
-        flat = array.flatten()
-        self._finite = flat[np.isfinite(flat)] if np.issubdtype(array.dtype, np.inexact) else flat
+        finite, self._n_total, self._n_used = finite_sample(array)
+        self._finite = finite
 
         self._ax.cla()
         self._ax.set_xlabel("Value")
@@ -201,6 +225,10 @@ class HistogramView(BaseView):
         self._stats_label = QLabel()
         self._stats_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
 
+        self._sample_label = QLabel()
+        self._sample_label.setStyleSheet("color: #b8860b;")
+        self._sample_label.setVisible(False)
+
         self._anomaly_label = QLabel()
         self._anomaly_label.setStyleSheet("color: red;")
         self._anomaly_label.setVisible(False)
@@ -219,6 +247,8 @@ class HistogramView(BaseView):
         ctrl_layout.addStretch()
         ctrl_layout.addWidget(self._stats_label)
         ctrl_layout.addSpacing(8)
+        ctrl_layout.addWidget(self._sample_label)
+        ctrl_layout.addSpacing(8)
         ctrl_layout.addWidget(self._anomaly_label)
 
         layout = QVBoxLayout(self)
@@ -232,34 +262,46 @@ class HistogramView(BaseView):
         return is_real_numeric(array) and array.size > 0
 
     def set_data(self, array: np.ndarray) -> None:
-        stats = array_stats(array)
+        self._canvas.set_clim_marker(None, None)  # reset; app.py syncs from ImageView
+        self._canvas.plot(array)  # samples once; stores _finite / _n_total / _n_used
 
-        if stats is not None and stats.finite_min is not None:
-            flat = array.flatten()
-            finite = flat[np.isfinite(flat)] if np.issubdtype(array.dtype, np.inexact) else flat
+        finite = self._canvas._finite
+        n_total = self._canvas._n_total
+        n_used = self._canvas._n_used
+
+        if finite is not None and finite.size > 0:
+            fmin, fmax = float(finite.min()), float(finite.max())
             mean = float(np.mean(finite))
             std = float(np.std(finite))
             p1, p50, p99 = (float(v) for v in np.percentile(finite, [1, 50, 99]))
             stats_str = (
-                f"min {stats.finite_min:.4g}  max {stats.finite_max:.4g}"
+                f"min {fmin:.4g}  max {fmax:.4g}"
                 f"  mean {mean:.4g}  std {std:.4g}"
                 f"  |  p1 {p1:.4g}  p50 {p50:.4g}  p99 {p99:.4g}"
             )
         else:
             stats_str = "no finite values"
-
         self._stats_label.setText(stats_str)
-        self._status = f"shape {array.shape}  dtype {array.dtype}  |  {stats_str}"
 
+        sampled = n_used < n_total
+        if sampled:
+            self._sample_label.setText(f"sampled {n_used:,} / {n_total:,}")
+            self._sample_label.setVisible(True)
+        else:
+            self._sample_label.setVisible(False)
+
+        self._status = f"shape {array.shape}  dtype {array.dtype}  |  {stats_str}"
+        if sampled:
+            self._status += "  (sampled)"
+
+        stats = array_stats(array)
         if stats is not None and stats.has_anomaly:
             self._anomaly_label.setText(stats.anomaly_str())
             self._anomaly_label.setVisible(True)
         else:
             self._anomaly_label.setVisible(False)
 
-        self._canvas.set_clim_marker(None, None)  # reset; app.py syncs from ImageView
         self._canvas.set_idle_status(self._status)
-        self._canvas.plot(array)
 
     def update_clim_marker(self, vmin: float | None, vmax: float | None) -> None:
         self._canvas.update_clim_marker(vmin, vmax)

@@ -195,13 +195,13 @@ class MainWindow(QMainWindow):
         QSettings("npyquick", "npyquick").setValue("last_dir", self._last_dir)
         self.setWindowTitle(f"npyquick — {path}")
 
-        arrays = self._model.available_arrays()
-        if len(arrays) > 1:
+        metas = self._model.available_array_meta()
+        if len(metas) > 1:
             self._array_combo.blockSignals(True)
             self._array_combo.clear()
-            for key, arr in arrays.items():
+            for key, meta in metas.items():
                 self._array_combo.addItem(
-                    f"{key}   {list(arr.shape)}   {arr.dtype}", key
+                    f"{key}   {list(meta.shape)}   {meta.dtype}", key
                 )
             self._array_combo.blockSignals(False)
             self._array_bar.setVisible(True)
@@ -229,9 +229,14 @@ class MainWindow(QMainWindow):
 
     def _on_array_selected(self, index: int) -> None:
         key = self._array_combo.itemData(index)
-        if key is not None:
+        if key is None:
+            return
+        try:
             self._model.select_array(key)
-            self._refresh_views()
+        except Exception as exc:
+            self._sb.showMessage(f"Cannot load array '{key}': {exc}")
+            return
+        self._refresh_views()
 
     # ------------------------------------------------------------------
     # Pixel size

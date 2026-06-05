@@ -12,9 +12,10 @@ def test_load_npy_available_arrays(tmp_path):
     np.save(p, arr)
     m = NpyDataModel()
     m.load(str(p))
-    avail = m.available_arrays()
-    assert list(avail.keys()) == [""]
-    np.testing.assert_array_equal(avail[""], arr)
+    metas = m.available_array_meta()
+    assert list(metas.keys()) == [""]
+    assert metas[""].shape == (3, 4)
+    assert metas[""].dtype == np.float32
 
 
 def test_load_npy_auto_selects_array(tmp_path):
@@ -34,10 +35,11 @@ def test_load_npz_available_arrays(tmp_path):
     np.savez(p, x=a, y=b)
     m = NpyDataModel()
     m.load(str(p))
-    avail = m.available_arrays()
-    assert set(avail.keys()) == {"x", "y"}
-    np.testing.assert_array_equal(avail["x"], a)
-    np.testing.assert_array_equal(avail["y"], b)
+    metas = m.available_array_meta()
+    assert set(metas.keys()) == {"x", "y"}
+    assert metas["x"].shape == (3, 3)
+    assert metas["x"].dtype == np.float32
+    assert metas["y"].shape == (6,)
 
 
 def test_load_npz_auto_selects_first(tmp_path):
@@ -74,7 +76,7 @@ def test_select_array_invalid_key_raises(tmp_path):
 def test_fresh_model_has_no_array():
     m = NpyDataModel()
     assert m.array is None
-    assert m.available_arrays() == {}
+    assert m.available_array_meta() == {}
 
 
 def test_path_set_after_load(tmp_path):

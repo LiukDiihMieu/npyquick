@@ -2,33 +2,73 @@ from __future__ import annotations
 
 import numpy as np
 
+from .core import limits
+from .core.npyheader import MemberMeta, peek_npy, peek_npz
+
 
 class NpyDataModel:
     def __init__(self) -> None:
         self.array: np.ndarray | None = None
         self.path: str = ""
-        self._arrays: dict[str, np.ndarray] = {}
+        self._is_npz = False
+        self._metas: dict[str, MemberMeta] = {}
         self._selected_key: str = ""
 
     def load(self, path: str) -> None:
         if path.endswith(".npz"):
-            with np.load(path, allow_pickle=False) as f:
-                arrays = {k: f[k] for k in f.files}
-            if not arrays:
+            metas = peek_npz(path)
+            if not metas:
                 raise ValueError("NPZ archive contains no arrays")
+            is_npz = True
         else:
-            arrays = {"": np.load(path, allow_pickle=False)}
+            metas = {"": peek_npy(path)}
+            is_npz = False
 
-        # Commit to instance state only after full validation
-        selected = next(iter(arrays))
-        self._arrays = arrays
+        selected = next(iter(metas))
+        # Materialize the first member up front so a bad file raises before we
+        # commit any state.
+        array = self._materialize(path, is_npz, selected, metas[selected])
+
+        self._is_npz = is_npz
+        self._metas = metas
         self._selected_key = selected
-        self.array = arrays[selected]
+        self.array = array
         self.path = path
 
-    def available_arrays(self) -> dict[str, np.ndarray]:
-        return dict(self._arrays)
+    def _materialize(
+        self, path: str, is_npz: bool, key: str, meta: MemberMeta
+    ) -> np.ndarray:
+        if is_npz:
+            if meta.nbytes > limits.NPZ_MEMBER_CEILING:
+                raise ValueError(
+                    f"Array '{key}' is {meta.nbytes / 1024**3:.1f} GiB, exceeding the "
+                    f"{limits.NPZ_MEMBER_CEILING / 1024**3:.0f} GiB limit for .npz "
+                    f"members (they cannot be memory-mapped)."
+                )
+            with np.load(path, allow_pickle=False) as f:
+                return f[key]
+        return self._load_npy(path, meta)
+
+    @staticmethod
+    def _load_npy(path: str, meta: MemberMeta) -> np.ndarray:
+        structured = meta.dtype.names is not None
+        zero_d = meta.shape == ()
+        if structured or zero_d or meta.nbytes <= limits.LARGE_BYTES:
+            return np.load(path, allow_pickle=False)
+        # Large numeric array: memory-map. Do NOT silently fall back to a full
+        # load on failure — that would defeat the protection and risk OOM.
+        try:
+            return np.load(path, mmap_mode="r", allow_pickle=False)
+        except (ValueError, OSError) as exc:
+            raise RuntimeError(
+                f"Array is {meta.nbytes / 1024**3:.1f} GiB and could not be "
+                f"memory-mapped: {exc}"
+            ) from exc
+
+    def available_array_meta(self) -> dict[str, MemberMeta]:
+        return dict(self._metas)
 
     def select_array(self, name: str) -> None:
-        self.array = self._arrays[name]
+        meta = self._metas[name]
+        self.array = self._materialize(self.path, self._is_npz, name, meta)
         self._selected_key = name

@@ -32,10 +32,14 @@ def compute_profile(
     if array.ndim == 3:
         n_ch = min(array.shape[2], 3)
         values = np.stack([
-            ndimage.map_coordinates(array[:, :, c].astype(float), [ys, xs], order=1)
+            ndimage.map_coordinates(
+                np.asarray(array[:, :, c], dtype=float), [ys, xs], order=1
+            )
             for c in range(n_ch)
         ])
     else:
-        values = ndimage.map_coordinates(array.astype(float), [ys, xs], order=1)
+        values = ndimage.map_coordinates(
+            np.asarray(array, dtype=float), [ys, xs], order=1
+        )
 
     return dists, values
