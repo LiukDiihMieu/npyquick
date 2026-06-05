@@ -631,10 +631,19 @@ class DualImageView(BaseView, SpatialView, ColormappedView):
     def _refresh_diff(self) -> None:
         if self._img1 is None or self._img2 is None:
             return
+        # Preserve zoom when re-entering diff mode; let the first load use the
+        # full extent by only restoring when the canvas already had data.
+        saved_view = (
+            self._diff_canvas.get_view()
+            if self._diff_canvas._data is not None
+            else None
+        )
         diff = self._img1.astype(float) - self._img2.astype(float)
         vmin, vmax = self._compute_diff_clim()
         self._diff_canvas.load(diff, cmap="RdBu_r", vmin=vmin, vmax=vmax)
         self._diff_canvas.set_endpoints(self._canvas1.get_endpoints())
+        if saved_view is not None:
+            self._diff_canvas.set_view(*saved_view)
 
     def _refresh_profile(self) -> None:
         if self._diff_mode:
@@ -683,6 +692,7 @@ class DualImageView(BaseView, SpatialView, ColormappedView):
         self._diff_mode = checked
         if checked:
             self._refresh_diff()
+            self._diff_canvas.set_view(*self._canvas2.get_view())
             self._mid_stack.setCurrentIndex(1)
             self._diff_clim_widget.setVisible(True)
             vmin, vmax = self._compute_diff_clim()
