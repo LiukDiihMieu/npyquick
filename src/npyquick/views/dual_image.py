@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import os
 import numpy as np
-from scipy import ndimage
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from PySide6.QtCore import Qt, QSettings, QUrl
@@ -11,7 +10,11 @@ from PySide6.QtWidgets import (
     QPushButton, QSplitter, QStackedWidget, QVBoxLayout, QWidget,
 )
 
+from ..core import limits
+from ..core.coord import PixelTransform
+from ..core.profile import compute_profile
 from ..core.stats import array_stats
+from ..model import NpyDataModel
 from .base import BaseView, ColormappedView, SpatialView
 
 
@@ -94,15 +97,16 @@ class DualImageCanvas(FigureCanvas):
         self._on_drop = on_drop
         self._editable = editable
         self._accept_extensions = accept_extensions
-        self._data: np.ndarray | None = None
+        self._data: np.ndarray | None = None       # full resolution (may be a memmap)
+        self._disp: np.ndarray | None = None        # float display array (maybe downsampled)
+        self._stride: int = 1                       # full-res pixels per display pixel
         self._endpoints = np.zeros((2, 2), dtype=float)
         self._dragging: int | None = None
         self._cs_line = self._ep0 = self._ep1 = None
         self._pan_start: tuple | None = None
         self._hover: tuple[int, int] | None = None
         self._im = None
-        self._pixel_size: float = 1.0
-        self._unit: str = "None"
+        self._transform = PixelTransform()
 
         self.mpl_connect("button_press_event", self._on_press)
         self.mpl_connect("motion_notify_event", self._on_motion)
@@ -111,10 +115,6 @@ class DualImageCanvas(FigureCanvas):
         self.mpl_connect("axes_leave_event", self._on_axes_leave)
         self.setAcceptDrops(on_drop is not None)
 
-    def _extent(self, h: int, w: int) -> list[float]:
-        ps = self._pixel_size
-        return [-0.5 * ps, (w - 0.5) * ps, (h - 0.5) * ps, -0.5 * ps]
-
     def load(
         self,
         data: np.ndarray,
@@ -122,21 +122,28 @@ class DualImageCanvas(FigureCanvas):
         vmin: float | None = None,
         vmax: float | None = None,
     ) -> None:
-        self._data = data.astype(float)
+        self._data = data
         h, w = data.shape
+        # Downsample by spatial pixel count, before any astype, so a memmap is
+        # never fully read into RAM. extent stays full-resolution so coordinates
+        # and pixel-size labels remain correct; hover still reads full-res _data.
+        s = limits.stride_for(h * w, limits.IMAGE_MAX_PIXELS)
+        self._stride = s
+        sub = data[::s, ::s] if s > 1 else data
+        self._disp = np.asarray(sub, dtype=float)
         self._fig.clear()
         self._ax = self._fig.add_subplot(111)
         self._ax.set_title(self._label, fontsize=9)
-        u = _fmt_unit(self._unit)
+        u = self._transform.format_unit()
         self._ax.set_xlabel(u)
         self._ax.set_ylabel(u)
         self._im = self._ax.imshow(
-            self._data, cmap=cmap, vmin=vmin, vmax=vmax,
+            self._disp, cmap=cmap, vmin=vmin, vmax=vmax,
             origin="upper", interpolation="nearest",
-            extent=self._extent(h, w),
+            extent=self._transform.extent(h, w),
         )
         self._fig.colorbar(self._im, ax=self._ax, fraction=0.046, pad=0.04)
-        ps = self._pixel_size
+        ps = self._transform.pixel_size
         self._endpoints = np.array(
             [[w * 0.1 * ps, h * 0.5 * ps], [w * 0.9 * ps, h * 0.5 * ps]], dtype=float
         )
@@ -173,31 +180,29 @@ class DualImageCanvas(FigureCanvas):
             self.draw_idle()
 
     def get_profile(self) -> tuple[np.ndarray, np.ndarray] | None:
-        if self._data is None:
+        if self._disp is None:
             return None
-        ps = self._pixel_size
-        p0, p1 = self._endpoints / ps   # physical → pixel for sampling
-        diff = p1 - p0
-        n = max(2, int(np.hypot(*diff)) + 1)
-        h, w = self._data.shape
-        xs = np.clip(np.linspace(p0[0], p1[0], n), 0, w - 1)
-        ys = np.clip(np.linspace(p0[1], p1[1], n), 0, h - 1)
-        profile = ndimage.map_coordinates(self._data, [ys, xs], order=1)
-        dists = np.linspace(0.0, float(np.hypot(*diff)), n)  # pixel dist; ProfileCanvas scales
-        return dists, profile
+        # Sample the (float, possibly downsampled) display array: endpoint pixel
+        # coords are full-resolution, so divide by the stride to reach the
+        # display grid, then scale distances back to full-res pixel units.
+        s = self._stride
+        p0_px, p1_px = self._transform.to_pixel(self._endpoints)
+        dists, values = compute_profile(self._disp, p0_px / s, p1_px / s)
+        return dists * s, values
 
     def set_pixel_size(self, ps: float, unit: str) -> None:
+        new_t = PixelTransform(ps, unit)
+        if new_t == self._transform:
+            return
+        old_t = self._transform
+        self._transform = new_t
         if self._data is None:
-            self._pixel_size = ps
-            self._unit = unit
             return
         h, w = self._data.shape
-        ratio = ps / self._pixel_size
-        self._pixel_size = ps
-        self._unit = unit
+        ratio = new_t.pixel_size / old_t.pixel_size
         self._endpoints *= ratio
-        self._im.set_extent(self._extent(h, w))
-        u = _fmt_unit(unit)
+        self._im.set_extent(new_t.extent(h, w))
+        u = new_t.format_unit()
         self._ax.set_xlabel(u)
         self._ax.set_ylabel(u)
         self._reset_zoom()
@@ -207,8 +212,8 @@ class DualImageCanvas(FigureCanvas):
 
     def status_str(self) -> str:
         parts = []
-        ps = self._pixel_size
-        u = _fmt_unit(self._unit)
+        ps = self._transform.pixel_size
+        u = self._transform.format_unit()
         if self._hover is not None and self._data is not None:
             x, y = self._hover
             xp, yp = x * ps, y * ps
@@ -255,10 +260,10 @@ class DualImageCanvas(FigureCanvas):
     def _reset_zoom(self) -> None:
         if self._data is None:
             return
-        ps = self._pixel_size
         h, w = self._data.shape
-        self._ax.set_xlim(-0.5 * ps, (w - 0.5) * ps)
-        self._ax.set_ylim((h - 0.5) * ps, -0.5 * ps)
+        x0, x1, y0_bot, y1_top = self._transform.extent(h, w)
+        self._ax.set_xlim(x0, x1)
+        self._ax.set_ylim(y0_bot, y1_top)
         self.draw_idle()
 
     def _on_axes_leave(self, ev) -> None:
@@ -274,12 +279,12 @@ class DualImageCanvas(FigureCanvas):
         yl = list(self._ax.get_ylim())
         xl = [xc + (xl[0] - xc) * factor, xc + (xl[1] - xc) * factor]
         yl = [yc + (yl[0] - yc) * factor, yc + (yl[1] - yc) * factor]
-        ps = self._pixel_size
         h, w = self._data.shape
-        xl[0] = max(xl[0], -0.5 * ps)
-        xl[1] = min(xl[1], (w - 0.5) * ps)
-        yl[0] = min(yl[0], (h - 0.5) * ps)
-        yl[1] = max(yl[1], -0.5 * ps)
+        x_min, x_max, y_bot, y_top = self._transform.extent(h, w)
+        xl[0] = max(xl[0], x_min)
+        xl[1] = min(xl[1], x_max)
+        yl[0] = min(yl[0], y_bot)
+        yl[1] = max(yl[1], y_top)
         if xl[0] >= xl[1] or yl[1] >= yl[0]:
             self._reset_zoom()
             return
@@ -306,12 +311,13 @@ class DualImageCanvas(FigureCanvas):
     def _on_motion(self, ev) -> None:
         if self._data is None:
             return
-        ps = self._pixel_size
+        t = self._transform
+        h, w = self._data.shape
         if ev.inaxes is self._ax:
-            h, w = self._data.shape
+            xp, yp = t.to_pixel([ev.xdata, ev.ydata])
             self._hover = (
-                int(round(np.clip(ev.xdata / ps, 0, w - 1))),
-                int(round(np.clip(ev.ydata / ps, 0, h - 1))),
+                int(round(np.clip(xp, 0, w - 1))),
+                int(round(np.clip(yp, 0, h - 1))),
             )
         else:
             self._hover = None
@@ -320,9 +326,8 @@ class DualImageCanvas(FigureCanvas):
             if ev.inaxes is not self._ax:
                 self._on_status(self.status_str())
                 return
-            h, w = self._data.shape
-            x = float(np.clip(ev.xdata, -0.5 * ps, (w - 0.5) * ps))
-            y = float(np.clip(ev.ydata, -0.5 * ps, (h - 0.5) * ps))
+            x = t.clamp_x_physical(ev.xdata, w)
+            y = t.clamp_y_physical(ev.ydata, h)
             self._endpoints[self._dragging] = [x, y]
             self._sync_artists()
             self.draw_idle()
@@ -333,19 +338,19 @@ class DualImageCanvas(FigureCanvas):
             p0 = inv0.transform([x0_px, y0_px])
             p1 = inv0.transform([ev.x, ev.y])
             dx, dy = p1[0] - p0[0], p1[1] - p0[1]
-            h, w = self._data.shape
+            x_min, x_max, y_bot, y_top = t.extent(h, w)
             xl = [xlim0[0] - dx, xlim0[1] - dx]
             yl = [ylim0[0] - dy, ylim0[1] - dy]
             span_x = xl[1] - xl[0]
             span_y = yl[0] - yl[1]
-            if xl[0] < -0.5 * ps:
-                xl = [-0.5 * ps, -0.5 * ps + span_x]
-            elif xl[1] > (w - 0.5) * ps:
-                xl = [(w - 0.5) * ps - span_x, (w - 0.5) * ps]
-            if yl[1] < -0.5 * ps:
-                yl = [-0.5 * ps + span_y, -0.5 * ps]
-            elif yl[0] > (h - 0.5) * ps:
-                yl = [(h - 0.5) * ps, (h - 0.5) * ps - span_y]
+            if xl[0] < x_min:
+                xl = [x_min, x_min + span_x]
+            elif xl[1] > x_max:
+                xl = [x_max - span_x, x_max]
+            if yl[1] < y_top:
+                yl = [y_top + span_y, y_top]
+            elif yl[0] > y_bot:
+                yl = [y_bot, y_bot - span_y]
             self._ax.set_xlim(xl)
             self._ax.set_ylim(yl)
             self.draw_idle()
@@ -381,6 +386,9 @@ class DualImageView(BaseView, SpatialView, ColormappedView):
         super().__init__()
         self._img1: np.ndarray | None = None
         self._img2: np.ndarray | None = None
+        self._model2 = NpyDataModel()   # private second model: keeps Img 2 under
+                                        # the same large-file guard as Img 1, while
+                                        # main's single-shared-model structure stays intact
         self._diff_mode: bool = False
         self._colormap: str = "gray"
         self._on_img1_load: callable | None = None
@@ -561,14 +569,15 @@ class DualImageView(BaseView, SpatialView, ColormappedView):
             self._on_img1_load(path)
 
     def _load_img2(self, path: str) -> None:
+        if path.endswith(".npz"):
+            self._on_status("Img 2: use an .npy file (for .npz use File › Open to pick an array)")
+            return
         try:
-            data = np.load(path, allow_pickle=False)
-            if not isinstance(data, np.ndarray):
-                self._on_status("Img 2: use an .npy file (for .npz use File › Open to pick an array)")
-                return
+            self._model2.load(path)   # peek header + LARGE_BYTES guard + mmap + ceiling
         except Exception as exc:
             self._on_status(f"Error loading Img 2: {exc}")
             return
+        data = self._model2.array
         if data.ndim != 2 or not np.issubdtype(data.dtype, np.number):
             self._on_status(
                 f"Img 2: expected 2D numeric array, got shape {data.shape} dtype {data.dtype}"
