@@ -132,7 +132,11 @@ class MainWindow(QMainWindow):
 
         self._array_combo = QComboBox()
         self._array_combo.setSizeAdjustPolicy(QComboBox.AdjustToContents)
-        self._array_combo.currentIndexChanged.connect(self._on_array_selected)
+        self._array_combo.setPlaceholderText("— select an array —")
+        # activated fires on every user pick, even when re-selecting the same
+        # index. currentIndexChanged would silently skip the first item if the
+        # combo already rested on index 0 after npz population.
+        self._array_combo.activated.connect(self._on_array_selected)
         self._array_bar = QWidget()
         bar_layout = QHBoxLayout(self._array_bar)
         bar_layout.setContentsMargins(6, 2, 6, 2)
@@ -196,22 +200,36 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(f"npyquick — {path}")
 
         metas = self._model.available_array_meta()
-        if len(metas) > 1:
+
+        if self._model.array is None:
+            # .npz opened: no member selected yet — show picker and archive
+            # summary; views remain disabled until the user selects an array.
             self._array_combo.blockSignals(True)
             self._array_combo.clear()
             for key, meta in metas.items():
                 self._array_combo.addItem(
                     f"{key}   {list(meta.shape)}   {meta.dtype}", key
                 )
+            # Start with no item highlighted so that picking ANY entry — including
+            # the first one — will fire the activated signal.
+            self._array_combo.setCurrentIndex(-1)
             self._array_combo.blockSignals(False)
             self._array_bar.setVisible(True)
+            self._set_tabs_enabled([])
+            n = len(metas)
+            self._sb.showMessage(
+                f"{os.path.basename(path)}  |  .npz  {n} array{'s' if n != 1 else ''}"
+                "  — select one above to view"
+            )
         else:
+            # .npy: single array, no picker needed.
             self._array_bar.setVisible(False)
-
-        self._refresh_views()
+            self._refresh_views()
 
     def _refresh_views(self) -> None:
         array = self._model.array
+        if array is None:
+            return  # .npz with no member selected yet — nothing to display
         compatible = [v.VIEW_ID for v in self._views if v.can_handle(array)]
         for v in self._views:
             if v.VIEW_ID in compatible:

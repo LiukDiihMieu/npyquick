@@ -42,13 +42,14 @@ def test_load_npz_available_arrays(tmp_path):
     assert metas["y"].shape == (6,)
 
 
-def test_load_npz_auto_selects_first(tmp_path):
+def test_load_npz_defers_selection(tmp_path):
+    """load() must not materialize any member — that happens in select_array()."""
     p = tmp_path / "multi.npz"
     np.savez(p, x=np.ones(3), y=np.zeros(3))
     m = NpyDataModel()
     m.load(str(p))
-    assert m.array is not None
-    assert m._selected_key in {"x", "y"}
+    assert m.array is None
+    assert m._selected_key == ""
 
 
 def test_select_array_switches_active(tmp_path):

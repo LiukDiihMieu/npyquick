@@ -19,19 +19,24 @@ class NpyDataModel:
             metas = peek_npz(path)
             if not metas:
                 raise ValueError("NPZ archive contains no arrays")
-            is_npz = True
-        else:
-            metas = {"": peek_npy(path)}
-            is_npz = False
+            # Deliberately do NOT materialize any member here: the first member
+            # may be huge (or even over NPZ_MEMBER_CEILING). Caller discovers
+            # available arrays via available_array_meta(), then calls
+            # select_array() to materialize the chosen one.
+            self._is_npz = True
+            self._metas = metas
+            self._selected_key = ""
+            self.array = None
+            self.path = path
+            return
 
-        selected = next(iter(metas))
-        # Materialize the first member up front so a bad file raises before we
-        # commit any state.
-        array = self._materialize(path, is_npz, selected, metas[selected])
+        meta = peek_npy(path)
+        # Materialize up front so a bad file raises before we commit state.
+        array = self._materialize(path, False, "", meta)
 
-        self._is_npz = is_npz
-        self._metas = metas
-        self._selected_key = selected
+        self._is_npz = False
+        self._metas = {"": meta}
+        self._selected_key = ""
         self.array = array
         self.path = path
 

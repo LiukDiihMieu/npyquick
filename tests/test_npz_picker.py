@@ -31,10 +31,14 @@ def test_array_bar_hidden_after_npy(win, tmp_path):
     assert win._array_bar.isHidden()
 
 
-def test_array_bar_hidden_for_single_array_npz(win, tmp_path):
+def test_array_bar_visible_for_single_array_npz(win, tmp_path):
+    """Single-member .npz should also show the picker so the ceiling check fires
+    at selection time, not at open time."""
     path = _write_npz(tmp_path, data=np.zeros((10, 10), dtype=np.float32))
     win.load_file(path)
-    assert win._array_bar.isHidden()
+    assert not win._array_bar.isHidden()
+    assert win._array_combo.count() == 1
+    assert win._model.array is None  # not yet materialized
 
 
 def test_array_bar_visible_for_multi_array_npz(win, tmp_path):
@@ -77,11 +81,28 @@ def test_selecting_combo_item_switches_model_array(win, tmp_path):
     path = _write_npz(tmp_path, x=arr_x, y=arr_y)
     win.load_file(path)
 
-    # find index of 'y'
+    # Simulate user picking 'y' — use activated signal (user-driven), not
+    # setCurrentIndex (programmatic, does not trigger activated).
     for i in range(win._array_combo.count()):
         if win._array_combo.itemData(i) == "y":
-            win._array_combo.setCurrentIndex(i)
+            win._array_combo.activated.emit(i)
             break
 
     assert win._model.array.shape == (6, 6)
     np.testing.assert_array_equal(win._model.array, arr_y)
+
+
+def test_first_combo_item_loads_on_first_pick(win, tmp_path):
+    """Regression: selecting the first npz member (index 0) must load it even
+    though the combo starts at index -1 (no pre-selection after open)."""
+    arr_a = np.full((5, 5), 3.0, dtype=np.float32)
+    arr_b = np.ones((3, 3), dtype=np.float32)
+    path = _write_npz(tmp_path, a=arr_a, b=arr_b)
+    win.load_file(path)
+
+    assert win._array_combo.currentIndex() == -1   # no item pre-selected
+    assert win._model.array is None
+
+    # simulate user picking the first item (index 0) via activated
+    win._array_combo.activated.emit(0)
+    assert win._model.array is not None

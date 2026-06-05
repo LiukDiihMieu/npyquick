@@ -90,9 +90,31 @@ def test_npz_select_over_ceiling_raises(tmp_path, monkeypatch):
     monkeypatch.setattr(limits, "NPZ_MEMBER_CEILING", 100)
 
     m = NpyDataModel()
-    m.load(str(p))  # first member (a_small) is fine
+    m.load(str(p))  # load only peeks metadata — no materialization here
     with pytest.raises(ValueError, match="exceeding"):
         m.select_array("z_big")
+
+
+def test_npz_large_first_member_does_not_block_load(tmp_path, monkeypatch):
+    """Regression: opening an npz must succeed even if the first member exceeds
+    NPZ_MEMBER_CEILING; the ceiling check only fires at select_array() time."""
+    big = np.zeros((10, 10), dtype=np.float64)     # 800 bytes
+    small = np.zeros((2, 2), dtype=np.uint8)        # 4 bytes
+    p = tmp_path / "mixed.npz"
+    np.savez(p, big_first=big, small=small)
+    monkeypatch.setattr(limits, "NPZ_MEMBER_CEILING", big.nbytes - 1)
+
+    m = NpyDataModel()
+    m.load(str(p))                        # must not raise
+    assert m.array is None
+    assert set(m.available_array_meta().keys()) == {"big_first", "small"}
+
+    with pytest.raises(ValueError, match="exceeding"):
+        m.select_array("big_first")
+
+    m.select_array("small")
+    assert m.array is not None
+    assert m.array.shape == (2, 2)
 
 
 def test_npz_select_materializes_only_chosen(tmp_path):
