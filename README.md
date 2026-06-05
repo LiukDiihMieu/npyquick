@@ -44,8 +44,22 @@ Displays 2D and RGB arrays as an interactive image.
 - Colormap selector (**View › Colormap**) for grayscale images: gray, viridis, plasma, inferno, magma, cividis, hot, coolwarm, RdBu, turbo
 - Manual brightness range via vmin / vmax inputs
 
+### Histogram view
+Shows the value distribution of any real numeric array (1D, 2D, RGB, or higher-dimensional). NaN/Inf values are excluded and reported separately.
+
+**Controls:**
+- Bin count selector: auto, 64, 128, 256, 512
+- Log-scale toggle for the count axis
+- X-range buttons: **Full** (entire data extent) and **Robust** (p2–p98), plus scroll-to-zoom on the x-axis
+- Summary line with min, max, mean, std and the p1 / p50 / p99 percentiles
+- Anomaly count (NaN / Inf) highlighted in red when present
+
+**Interactions:**
+- Hover over a bar to read its `[lo, hi)` range and count in the status bar
+- When a 2D image is loaded, the image's current vmin / vmax appear as labelled dashed markers, kept in sync with the Image view's brightness range
+
 ### Table view
-Fallback for any array shape or dtype that the image view cannot display (1D, >2D, non-numeric, empty, scalar). Rows and columns are capped at 10 000 to keep large arrays usable.
+Fallback for any array shape or dtype that the image view cannot display (1D, >2D, non-numeric, empty, scalar, complex). Rows and columns are capped at 10 000 to keep large arrays usable.
 
 ### .npz support
 When a `.npz` archive contains multiple arrays, a dropdown appears above the tabs listing each key with its shape and dtype. Switching the selection immediately reloads the active view.
@@ -138,7 +152,6 @@ restarting the file manager or logging out and back in before the menu updates.
 
 ## TODO
 
-- [ ] Histogram panel
 - [ ] `>2D` array slicer
 - [ ] 1D / time-series view
 - [ ] Complex array support (real / imaginary / magnitude / phase)

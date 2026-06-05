@@ -165,6 +165,9 @@ class HistogramCanvas(FigureCanvas):
         if self._finite is None or self._finite.size < 2:
             return
         lo, hi = np.percentile(self._finite, [2, 98])
+        if lo == hi:
+            delta = abs(lo) * 0.05 if lo != 0 else 0.5
+            lo, hi = lo - delta, hi + delta
         self._ax.set_xlim(lo, hi)
         self.draw_idle()
 

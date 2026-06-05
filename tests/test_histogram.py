@@ -1,6 +1,8 @@
 """Tests for HistogramView and HistogramCanvas."""
 from __future__ import annotations
 
+import warnings
+
 import numpy as np
 import pytest
 
@@ -102,6 +104,26 @@ def test_canvas_log_scale_toggle_does_not_crash():
     c.plot(np.arange(1, 101, dtype=np.float32))
     c.set_log_scale(True)
     c.set_log_scale(False)
+
+
+def test_xlim_robust_constant_array_no_singular_warning():
+    c = HistogramCanvas()
+    c.plot(np.full(100, 3.0, dtype=np.float32))
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        c.xlim_robust()
+    lo, hi = c._ax.get_xlim()
+    assert hi > lo
+
+
+def test_xlim_robust_constant_zero_array_no_singular_warning():
+    c = HistogramCanvas()
+    c.plot(np.zeros(100, dtype=np.float32))
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        c.xlim_robust()
+    lo, hi = c._ax.get_xlim()
+    assert hi > lo
 
 
 # ---------------------------------------------------------------------------

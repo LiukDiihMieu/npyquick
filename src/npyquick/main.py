@@ -9,8 +9,12 @@ from npyquick.app import MainWindow
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="npyquick — quick 2D grayscale .npy viewer")
-    parser.add_argument("file", nargs="?", help="Path to a .npy file to open on launch")
+    parser = argparse.ArgumentParser(
+        description="npyquick — a fast, lightweight viewer for NumPy arrays (.npy / .npz)"
+    )
+    parser.add_argument(
+        "file", nargs="?", help="Path to a .npy or .npz file to open on launch"
+    )
     args, qt_argv = parser.parse_known_args()
 
     app = QApplication([sys.argv[0]] + qt_argv)
