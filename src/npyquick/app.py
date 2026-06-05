@@ -37,6 +37,7 @@ def _format_array_summary(array: np.ndarray) -> str:
 
 from .views.base import ColormappedView, SpatialView
 from .views.dual_image import DualImageView
+from .views.histogram import HistogramView
 from .views.image import ImageView
 from .views.pixel_size_dialog import PixelSizeDialog
 from .views.table import RawTableView
@@ -116,11 +117,16 @@ class MainWindow(QMainWindow):
     def _build_central(self) -> None:
         self._image_view = ImageView()
         self._table_view = RawTableView()
+        self._histogram_view = HistogramView()
         self._compare_view = DualImageView()
 
-        self._views: list = [self._image_view, self._table_view, self._compare_view]
+        self._views: list = [
+            self._image_view, self._table_view,
+            self._histogram_view, self._compare_view,
+        ]
         for v in self._views:
             v.set_on_status(self._sb.showMessage)
+        self._image_view.set_on_clim_change(self._histogram_view.update_clim_marker)
         self._compare_view.set_on_img1_load(self.load_file)
 
         self._stack = QStackedWidget()
@@ -205,13 +211,13 @@ class MainWindow(QMainWindow):
         QSettings("npyquick", "npyquick").setValue("last_dir", self._last_dir)
         self.setWindowTitle(f"npyquick — {path}")
 
-        arrays = self._model.available_arrays()
-        if len(arrays) > 1:
+        metas = self._model.available_array_meta()
+        if len(metas) > 1:
             self._array_combo.blockSignals(True)
             self._array_combo.clear()
-            for key, arr in arrays.items():
+            for key, meta in metas.items():
                 self._array_combo.addItem(
-                    f"{key}   {list(arr.shape)}   {arr.dtype}", key
+                    f"{key}   {list(meta.shape)}   {meta.dtype}", key
                 )
             self._array_combo.blockSignals(False)
             self._array_bar.setVisible(True)
@@ -226,6 +232,10 @@ class MainWindow(QMainWindow):
         for v in self._views:
             if v.VIEW_ID in compatible:
                 v.set_data(array)
+        if self._image_view.can_handle(array):
+            self._histogram_view.update_clim_marker(*self._image_view.get_clim())
+        else:
+            self._histogram_view.update_clim_marker(None, None)
         self._compare_view.set_img1_label(os.path.basename(self._current_path))
         self._apply_pixel_size()
         self._apply_colormap(self._colormap)
@@ -236,9 +246,14 @@ class MainWindow(QMainWindow):
 
     def _on_array_selected(self, index: int) -> None:
         key = self._array_combo.itemData(index)
-        if key is not None:
+        if key is None:
+            return
+        try:
             self._model.select_array(key)
-            self._refresh_views()
+        except Exception as exc:
+            self._sb.showMessage(f"Cannot load array '{key}': {exc}")
+            return
+        self._refresh_views()
 
     # ------------------------------------------------------------------
     # Pixel size

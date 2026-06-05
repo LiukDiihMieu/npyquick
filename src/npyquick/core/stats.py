@@ -4,6 +4,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from . import limits
+
 
 @dataclass(frozen=True)
 class ArrayStats:
@@ -12,13 +14,20 @@ class ArrayStats:
     nan_count: int
     pos_inf_count: int
     neg_inf_count: int
+    sampled: bool = False  # computed from a subsample of a large array
 
     @property
     def has_anomaly(self) -> bool:
         return self.nan_count > 0 or self.pos_inf_count > 0 or self.neg_inf_count > 0
 
     def anomaly_str(self) -> str:
-        """Return compact anomaly summary, e.g. 'NaN: 3  +Inf: 1'. Empty if none."""
+        """Compact anomaly summary, e.g. 'NaN: 3  +Inf: 1'.
+
+        For sampled stats, exact counts would be misleading (sparse anomalies
+        may be missed or over-represented), so only a qualitative note is given.
+        """
+        if self.sampled:
+            return "NaN/Inf present in sample" if self.has_anomaly else "no anomaly in sample"
         parts = []
         if self.nan_count:
             parts.append(f"NaN: {self.nan_count}")
@@ -33,28 +42,47 @@ class ArrayStats:
         if self.finite_min is None:
             return "no finite values"
         prefix = "finite range" if self.has_anomaly else "range"
-        return f"{prefix} [{self.finite_min:.4g}, {self.finite_max:.4g}]"
+        approx = " (approx)" if self.sampled else ""
+        return f"{prefix} [{self.finite_min:.4g}, {self.finite_max:.4g}]{approx}"
+
+
+def is_real_numeric(array: np.ndarray) -> bool:
+    """True for real integer and floating dtypes; False for complex and non-numeric."""
+    return (
+        np.issubdtype(array.dtype, np.number)
+        and not np.issubdtype(array.dtype, np.complexfloating)
+    )
 
 
 def array_stats(array: np.ndarray) -> ArrayStats | None:
     """Compute finite range and anomaly counts for numeric arrays.
 
-    Returns None for non-numeric dtypes or empty arrays.
+    Returns None for non-numeric, complex, or empty arrays.
     Integer arrays cannot contain NaN/Inf, so anomaly counts are always 0.
+    Arrays whose element count exceeds HIST_MAX_SAMPLES are subsampled
+    (range/counts become approximate, ``sampled=True``) to avoid materializing a
+    full finite mask. This is a compute budget independent of the byte-based I/O
+    threshold; downsample_stride returns 1 when within budget.
     """
-    if not np.issubdtype(array.dtype, np.number) or array.size == 0:
+    if not is_real_numeric(array) or array.size == 0:
         return None
+
+    flat = array.reshape(-1)
+    stride = limits.downsample_stride(flat.size, limits.HIST_MAX_SAMPLES)
+    sampled = stride > 1
+    sample = np.asarray(flat[::stride]) if sampled else array
+
     if np.issubdtype(array.dtype, np.integer):
-        lo, hi = float(array.min()), float(array.max())
-        return ArrayStats(lo, hi, 0, 0, 0)
-    # floating-point and complex
-    nan_count = int(np.sum(np.isnan(array)))
-    pos_inf_count = int(np.sum(np.isposinf(array)))
-    neg_inf_count = int(np.sum(np.isneginf(array)))
-    finite = array[np.isfinite(array)]
+        lo, hi = float(sample.min()), float(sample.max())
+        return ArrayStats(lo, hi, 0, 0, 0, sampled)
+
+    nan_count = int(np.sum(np.isnan(sample)))
+    pos_inf_count = int(np.sum(np.isposinf(sample)))
+    neg_inf_count = int(np.sum(np.isneginf(sample)))
+    finite = sample[np.isfinite(sample)]
     if finite.size == 0:
-        return ArrayStats(None, None, nan_count, pos_inf_count, neg_inf_count)
+        return ArrayStats(None, None, nan_count, pos_inf_count, neg_inf_count, sampled)
     return ArrayStats(
         float(finite.min()), float(finite.max()),
-        nan_count, pos_inf_count, neg_inf_count,
+        nan_count, pos_inf_count, neg_inf_count, sampled,
     )

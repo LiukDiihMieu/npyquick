@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 
+from npyquick.core import limits
 from npyquick.views.table import NpyTableModel
 
 
@@ -29,14 +30,14 @@ def test_3d_array_reshapes_to_last_axis_cols():
 
 def test_row_cap_applied():
     m = NpyTableModel()
-    m.set_array(np.zeros((NpyTableModel.MAX_ROWS + 100, 5)))
-    assert m.rowCount() == NpyTableModel.MAX_ROWS
+    m.set_array(np.zeros((limits.TABLE_MAX_PER_AXIS + 100, 5)))
+    assert m.rowCount() == limits.TABLE_MAX_PER_AXIS
 
 
 def test_col_cap_applied():
     m = NpyTableModel()
-    m.set_array(np.zeros((5, NpyTableModel.MAX_COLS + 100)))
-    assert m.columnCount() == NpyTableModel.MAX_COLS
+    m.set_array(np.zeros((5, limits.TABLE_MAX_PER_AXIS + 100)))
+    assert m.columnCount() == limits.TABLE_MAX_PER_AXIS
 
 
 def test_set_array_replaces_previous():

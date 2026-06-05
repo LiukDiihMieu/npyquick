@@ -8,9 +8,10 @@ from PySide6.QtWidgets import (
     QHBoxLayout, QLabel, QLineEdit, QPushButton, QSplitter, QVBoxLayout, QWidget,
 )
 
+from ..core import limits
 from ..core.coord import PixelTransform
 from ..core.profile import compute_profile
-from ..core.stats import array_stats
+from ..core.stats import array_stats, is_real_numeric
 from .base import BaseView, ColormappedView, SpatialView
 
 
@@ -81,7 +82,9 @@ class ImageCanvas(FigureCanvas):
         self._ax = self._fig.add_subplot(111)
         self._profile = profile
         self._on_status: callable = lambda _: None
-        self._data: np.ndarray | None = None
+        self._data: np.ndarray | None = None      # full resolution (may be a memmap)
+        self._disp: np.ndarray | None = None       # float display array (maybe downsampled)
+        self._stride: int = 1                      # full-res pixels per display pixel
         self._rgb: bool = False
         self._endpoints = np.zeros((2, 2), dtype=float)
         self._dragging: int | None = None
@@ -101,23 +104,40 @@ class ImageCanvas(FigureCanvas):
     def set_on_status(self, cb: callable) -> None:
         self._on_status = cb
 
-    def load(self, data: np.ndarray) -> None:
+    def load(self, data: np.ndarray) -> tuple[str | None, str | None]:
         self._data = data
         self._rgb = data.ndim == 3
         self._fig.clear()
         self._ax = self._fig.add_subplot(111)
 
         h, w = data.shape[:2]
+        # Downsample by spatial pixel count, before any astype, so a memmap is
+        # never fully read into RAM. This is a rendering budget independent of
+        # the byte-based I/O threshold; stride_for returns 1 when within budget.
+        # extent stays full-resolution so coordinates and pixel-size labels
+        # remain correct.
+        s = limits.stride_for(h * w, limits.IMAGE_MAX_PIXELS)
+        self._stride = s
+        downsample_str: str | None = None
+        if s > 1:
+            sub = data[::s, ::s]
+            dh, dw = sub.shape[:2]
+            downsample_str = f"downsampled {h}×{w} → {dh}×{dw}  (1/{s})"
+        else:
+            sub = data
+
         extent = self._transform.extent(h, w)
         norm_str: str | None = None
         if self._rgb:
-            display, norm_str = self._prepare_rgb(data)
+            display, norm_str = self._prepare_rgb(sub)
+            self._disp = display
             self._im = self._ax.imshow(
                 display, origin="upper", interpolation="nearest", extent=extent,
             )
         else:
+            self._disp = np.asarray(sub, dtype=float)
             self._im = self._ax.imshow(
-                data.astype(float), cmap=self._colormap,
+                self._disp, cmap=self._colormap,
                 origin="upper", interpolation="nearest", extent=extent,
             )
             self._fig.colorbar(self._im, ax=self._ax, fraction=0.046, pad=0.04)
@@ -135,7 +155,7 @@ class ImageCanvas(FigureCanvas):
         self._init_artists()
         self._refresh_profile()
         self.draw()
-        return norm_str
+        return norm_str, downsample_str
 
     @staticmethod
     def _prepare_rgb(data: np.ndarray) -> tuple[np.ndarray, str]:
@@ -200,11 +220,15 @@ class ImageCanvas(FigureCanvas):
     # ------------------------------------------------------------------
 
     def _refresh_profile(self) -> None:
-        if self._data is None:
+        if self._disp is None:
             return
+        # Sample the (float, possibly downsampled) display array: endpoint pixel
+        # coords are in full resolution, so divide by the stride to reach the
+        # display grid, then scale distances back to full-res pixel units.
+        s = self._stride
         p0_px, p1_px = self._transform.to_pixel(self._endpoints)
-        dists, values = compute_profile(self._data, p0_px, p1_px)
-        self._profile.set_profile(dists, values)
+        dists, values = compute_profile(self._disp, p0_px / s, p1_px / s)
+        self._profile.set_profile(dists * s, values)
 
     # ------------------------------------------------------------------
     # Mouse interaction
@@ -371,6 +395,7 @@ class ImageView(BaseView, SpatialView, ColormappedView):
 
     def __init__(self) -> None:
         super().__init__()
+        self._on_clim_change: callable = lambda vmin, vmax: None
         self._profile = ProfileCanvas()
         self._canvas = ImageCanvas(self._profile)
 
@@ -394,6 +419,9 @@ class ImageView(BaseView, SpatialView, ColormappedView):
         self._apply_btn.clicked.connect(self._apply_clim)
         self._reset_btn.clicked.connect(self._reset_clim)
 
+        self._downsample_label = QLabel()
+        self._downsample_label.setStyleSheet("color: #b8860b;")
+        self._downsample_label.setVisible(False)
         self._norm_label = QLabel()
         self._norm_label.setVisible(False)
         self._anomaly_label = QLabel()
@@ -410,6 +438,7 @@ class ImageView(BaseView, SpatialView, ColormappedView):
         ctrl_layout.addWidget(self._apply_btn)
         ctrl_layout.addWidget(self._reset_btn)
         ctrl_layout.addStretch()
+        ctrl_layout.addWidget(self._downsample_label)
         ctrl_layout.addWidget(self._norm_label)
         ctrl_layout.addWidget(self._anomaly_label)
 
@@ -424,13 +453,19 @@ class ImageView(BaseView, SpatialView, ColormappedView):
         if array.size == 0:
             return False
         if array.ndim == 2:
-            return np.issubdtype(array.dtype, np.number)
+            return is_real_numeric(array)
         if array.ndim == 3 and array.shape[2] == 3:
-            return np.issubdtype(array.dtype, np.number)
+            return is_real_numeric(array)
         return False
 
     def set_data(self, array: np.ndarray) -> None:
-        norm_str = self._canvas.load(array)
+        norm_str, downsample_str = self._canvas.load(array)
+        if downsample_str is not None:
+            self._downsample_label.setText(downsample_str)
+            self._downsample_label.setVisible(True)
+        else:
+            self._downsample_label.setText("")
+            self._downsample_label.setVisible(False)
         self._vmin_edit.clear()
         self._vmax_edit.clear()
         rgb = array.ndim == 3
@@ -463,11 +498,20 @@ class ImageView(BaseView, SpatialView, ColormappedView):
     def refresh_status(self) -> None:
         self._on_status(self._canvas.status_str())
 
+    def set_on_clim_change(self, cb: callable) -> None:
+        self._on_clim_change = cb
+
+    def get_clim(self) -> tuple[float | None, float | None]:
+        if self._canvas._im is None or self._canvas._rgb:
+            return None, None
+        return self._canvas._im.get_clim()
+
     def _apply_clim(self) -> None:
         try:
             vmin = float(self._vmin_edit.text()) if self._vmin_edit.text() else None
             vmax = float(self._vmax_edit.text()) if self._vmax_edit.text() else None
             self._canvas.set_clim(vmin, vmax)
+            self._on_clim_change(*self.get_clim())
         except ValueError:
             pass
 
@@ -475,4 +519,5 @@ class ImageView(BaseView, SpatialView, ColormappedView):
         self._vmin_edit.clear()
         self._vmax_edit.clear()
         self._canvas.reset_clim()
+        self._on_clim_change(*self.get_clim())
 

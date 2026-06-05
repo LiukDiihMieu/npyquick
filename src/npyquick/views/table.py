@@ -3,17 +3,16 @@ from __future__ import annotations
 import numpy as np
 from PySide6.QtCore import QAbstractTableModel, QModelIndex, Qt
 from PySide6.QtWidgets import (
-    QLabel, QSplitter, QStackedWidget, QTableView, QVBoxLayout, QWidget,
+    QHBoxLayout, QLabel, QSplitter, QStackedWidget, QTableView, QVBoxLayout,
+    QWidget,
 )
 
+from ..core import limits
 from ..core.stats import array_stats
 from .base import BaseView
 
 
 class NpyTableModel(QAbstractTableModel):
-    MAX_ROWS = 10_000
-    MAX_COLS = 10_000
-
     def __init__(self) -> None:
         super().__init__()
         self._array: np.ndarray | None = None
@@ -38,14 +37,14 @@ class NpyTableModel(QAbstractTableModel):
     def rowCount(self, parent: QModelIndex = QModelIndex()) -> int:
         if self._array is None:
             return 0
-        return min(len(self._array), self.MAX_ROWS)
+        return min(len(self._array), limits.TABLE_MAX_PER_AXIS)
 
     def columnCount(self, parent: QModelIndex = QModelIndex()) -> int:
         if self._array is None:
             return 0
         if self._flat:
             return 1
-        return min(self._array.shape[1], self.MAX_COLS)
+        return min(self._array.shape[1], limits.TABLE_MAX_PER_AXIS)
 
     def data(self, index: QModelIndex, role: int = Qt.DisplayRole):
         if not index.isValid() or role != Qt.DisplayRole or self._array is None:
@@ -103,9 +102,18 @@ class RawTableView(BaseView):
         self._stack.addWidget(self._rgb_splitter)   # index 1
 
         self._info = QLabel()
+        self._trunc_label = QLabel()
+        self._trunc_label.setStyleSheet("color: #b8860b;")
+        self._trunc_label.setVisible(False)
+        info_row = QHBoxLayout()
+        info_row.setContentsMargins(0, 0, 0, 0)
+        info_row.setSpacing(0)
+        info_row.addWidget(self._info)
+        info_row.addWidget(self._trunc_label)
+        info_row.addStretch(1)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(4, 4, 4, 4)
-        layout.addWidget(self._info)
+        layout.addLayout(info_row)
         layout.addWidget(self._stack)
 
     @classmethod
@@ -119,22 +127,35 @@ class RawTableView(BaseView):
             self._stack.setCurrentIndex(1)
             rows = self._rgb_models[0].rowCount()
             cols = self._rgb_models[0].columnCount()
-            h, w = array.shape[:2]
-            truncated = rows < h or cols < w
-            self._status = (
-                f"shape {array.shape}  dtype {array.dtype}  —  "
-                f"3 channels, each {rows}×{cols}"
-                + ("  (truncated)" if truncated else "")
-            )
+            full_rows, full_cols = array.shape[:2]
+            self._status = f"shape {array.shape}  dtype {array.dtype}  —  3 channels"
+            trunc_prefix = ", each showing"
         else:
             self._single_model.set_array(array)
             self._stack.setCurrentIndex(0)
             rows = self._single_model.rowCount()
             cols = self._single_model.columnCount()
-            actual_rows = array.shape[0] if array.ndim >= 1 else 1
-            self._status = f"shape {array.shape}  dtype {array.dtype}  —  showing {rows}×{cols}"
-            if rows < actual_rows:
-                self._status += f"  (truncated from {actual_rows} rows)"
+            if array.ndim == 0:
+                full_rows, full_cols = 1, 1
+            elif array.ndim == 1:
+                full_rows, full_cols = array.shape[0], 1
+            elif array.ndim == 2:
+                full_rows, full_cols = array.shape
+            else:
+                full_cols = array.shape[-1]
+                full_rows = int(np.prod(array.shape[:-1]))
+            self._status = f"shape {array.shape}  dtype {array.dtype}"
+            trunc_prefix = "  —  showing"
+
+        truncated = rows < full_rows or cols < full_cols
+        if truncated:
+            self._trunc_label.setText(
+                f"{trunc_prefix} {rows}×{cols} of {full_rows}×{full_cols}  (truncated)"
+            )
+            self._trunc_label.setVisible(True)
+        else:
+            self._trunc_label.setVisible(False)
+
         stats = array_stats(array)
         if stats is not None and stats.has_anomaly:
             self._status += f"  |  {stats.anomaly_str()}"

@@ -5,13 +5,35 @@ import numpy as np
 import pytest
 
 from npyquick.app import _format_array_summary
-from npyquick.core.stats import ArrayStats, array_stats
+from npyquick.core.stats import ArrayStats, array_stats, is_real_numeric
 from npyquick.views.image import ImageView
 
 
 # ---------------------------------------------------------------------------
 # array_stats — pure logic
 # ---------------------------------------------------------------------------
+
+def test_is_real_numeric_float():
+    assert is_real_numeric(np.zeros(3, dtype=np.float64))
+
+def test_is_real_numeric_int():
+    assert is_real_numeric(np.zeros(3, dtype=np.int32))
+
+def test_is_real_numeric_rejects_complex():
+    assert not is_real_numeric(np.zeros(3, dtype=np.complex128))
+
+def test_is_real_numeric_rejects_string():
+    assert not is_real_numeric(np.array(["a", "b"]))
+
+def test_array_stats_complex_returns_none():
+    arr = np.array([1+2j, 3+4j], dtype=np.complex128)
+    assert array_stats(arr) is None
+
+def test_array_stats_complex_does_not_raise():
+    arr = np.array([[1+2j, 3+4j], [5+6j, 7+8j]], dtype=np.complex128)
+    result = array_stats(arr)
+    assert result is None
+
 
 def test_integer_array_no_anomaly():
     s = array_stats(np.array([1, 2, 3], dtype=np.int32))
