@@ -74,6 +74,11 @@ class MainWindow(QMainWindow):
         save_sc = QShortcut(QKeySequence.StandardKey.Save, self)
         save_sc.activated.connect(self._export_focused_plot)
 
+        next_tab_sc = QShortcut(QKeySequence("Ctrl+Tab"), self)
+        next_tab_sc.activated.connect(self._next_tab)
+        prev_tab_sc = QShortcut(QKeySequence("Ctrl+Shift+Tab"), self)
+        prev_tab_sc.activated.connect(self._prev_tab)
+
         self._sb.showMessage("File › Open  (Ctrl+O)  to load a .npy or .npz file.")
 
         geom = _s.value("geometry")
@@ -93,6 +98,14 @@ class MainWindow(QMainWindow):
         open_a.setShortcut("Ctrl+O")
         open_a.triggered.connect(self.open_file)
         fm.addAction(open_a)
+
+        reload_a = QAction("&Reload", self)
+        reload_a.setShortcuts([QKeySequence("Ctrl+R"), QKeySequence("F5")])
+        reload_a.triggered.connect(self._reload_file)
+        reload_a.setEnabled(False)
+        fm.addAction(reload_a)
+        self._reload_action = reload_a
+
         fm.addSeparator()
         quit_a = QAction("&Quit", self)
         quit_a.setShortcut("Ctrl+Q")
@@ -241,6 +254,7 @@ class MainWindow(QMainWindow):
             return
 
         self._current_path = path
+        self._reload_action.setEnabled(True)
         self._last_dir = os.path.dirname(os.path.abspath(path))
         QSettings("npyquick", "npyquick").setValue("last_dir", self._last_dir)
         self.setWindowTitle(f"npyquick — {path}")
@@ -306,6 +320,33 @@ class MainWindow(QMainWindow):
             self._sb.showMessage(f"Cannot load array '{key}': {exc}")
             return
         self._refresh_views()
+
+    def _reload_file(self) -> None:
+        if self._current_path:
+            self.load_file(self._current_path)
+            self._sb.showMessage("File reloaded", 3000)
+
+    def _next_tab(self) -> None:
+        if not self._tabs.isVisible():
+            return
+        n = self._tabs.count()
+        cur = self._tabs.currentIndex()
+        for offset in range(1, n + 1):
+            i = (cur + offset) % n
+            if self._tabs.isTabEnabled(i):
+                self._tabs.setCurrentIndex(i)
+                break
+
+    def _prev_tab(self) -> None:
+        if not self._tabs.isVisible():
+            return
+        n = self._tabs.count()
+        cur = self._tabs.currentIndex()
+        for offset in range(1, n + 1):
+            i = (cur - offset) % n
+            if self._tabs.isTabEnabled(i):
+                self._tabs.setCurrentIndex(i)
+                break
 
     # ------------------------------------------------------------------
     # Pixel size
