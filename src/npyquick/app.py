@@ -306,6 +306,10 @@ class MainWindow(QMainWindow):
     # Drag and drop
     # ------------------------------------------------------------------
 
+    def _has_data(self) -> bool:
+        """Single source of truth for whether plots can be exported."""
+        return self._model.array is not None
+
     def _rebuild_export_menu(self) -> None:
         for a in self._export_actions:
             self._file_menu.removeAction(a)
@@ -314,7 +318,10 @@ class MainWindow(QMainWindow):
         sep = self._file_menu.insertSeparator(self._quit_action)
         self._export_actions.append(sep)
 
-        targets = self._views[self._tabs.currentIndex()].export_targets()
+        targets = (
+            self._views[self._tabs.currentIndex()].export_targets()
+            if self._has_data() else []
+        )
 
         if not targets:
             a = QAction("Export Plot", self)
@@ -344,7 +351,10 @@ class MainWindow(QMainWindow):
         return None
 
     def _copy_focused_plot(self) -> None:
-        """Ctrl+C copies the focused canvas; hints if no panel is selected."""
+        """Ctrl+C copies the focused canvas; hints if nothing is exportable."""
+        if not self._has_data():
+            self._sb.showMessage("No plot loaded — open a file first", 2500)
+            return
         canvas = self._focused_canvas()
         if canvas is None:
             self._sb.showMessage("Click a plot first, then press Ctrl+C to copy", 2500)
@@ -352,7 +362,10 @@ class MainWindow(QMainWindow):
         canvas._copy_to_clipboard()
 
     def _export_focused_plot(self) -> None:
-        """Ctrl+S exports the focused canvas; hints if no panel is selected."""
+        """Ctrl+S exports the focused canvas; hints if nothing is exportable."""
+        if not self._has_data():
+            self._sb.showMessage("No plot loaded — open a file first", 2500)
+            return
         canvas = self._focused_canvas()
         if canvas is None:
             self._sb.showMessage("Click a plot first, then press Ctrl+S to export", 2500)

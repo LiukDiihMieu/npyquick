@@ -31,7 +31,15 @@ class ExportableMixin:
         if isinstance(win, QMainWindow):
             win.statusBar().showMessage(msg, timeout)
 
+    def _exports_allowed(self) -> bool:
+        # Duck-typed so the mixin stays decoupled from MainWindow (and works in
+        # standalone tests where the parent has no _has_data method).
+        check = getattr(self.window(), "_has_data", None)
+        return bool(check()) if callable(check) else True
+
     def contextMenuEvent(self, ev) -> None:
+        if not self._exports_allowed():
+            return
         menu = QMenu(self)
         menu.addAction("Export this plot…", self._export_figure)
         menu.addAction("Copy to clipboard", self._copy_to_clipboard)
