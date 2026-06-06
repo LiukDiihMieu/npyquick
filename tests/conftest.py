@@ -7,7 +7,18 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import numpy as np
 import pytest
+from PySide6.QtCore import QStandardPaths
 from PySide6.QtWidgets import QApplication
+
+
+# Redirect QStandardPaths (and therefore QSettings) into Qt's test sandbox
+# before anything constructs a QSettings instance. closeEvent saves geometry,
+# load_file saves last_dir, and _export_figure saves last_export_dir — every
+# test using `main_window` or load_file would otherwise rewrite the developer's
+# persistent ~/.config/npyquick configuration. The redirect sends those writes
+# to ~/.qttest/config/npyquick/ instead, leaving the real config untouched.
+# Called at module load (before any fixture runs) so it applies to every test.
+QStandardPaths.setTestModeEnabled(True)
 
 
 @pytest.fixture(scope="session", autouse=True)
