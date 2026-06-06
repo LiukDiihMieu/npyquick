@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QSettings
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget,
 )
@@ -256,11 +256,24 @@ class LineplotView(BaseView):
 
         self._canvas = LineplotCanvas(_status_proxy)
 
+        _s = QSettings("npyquick", "npyquick")
+
         self._log_x_check = QCheckBox("Log X")
         self._log_x_check.toggled.connect(self._canvas.set_log_x)
+        self._log_x_check.toggled.connect(
+            lambda checked: QSettings("npyquick", "npyquick").setValue("lineplot_log_x", checked)
+        )
 
         self._log_y_check = QCheckBox("Log Y")
         self._log_y_check.toggled.connect(self._canvas.set_log_y)
+        self._log_y_check.toggled.connect(
+            lambda checked: QSettings("npyquick", "npyquick").setValue("lineplot_log_y", checked)
+        )
+
+        if _s.value("lineplot_log_x", False, type=bool):
+            self._log_x_check.setChecked(True)
+        if _s.value("lineplot_log_y", False, type=bool):
+            self._log_y_check.setChecked(True)
 
         self._full_btn = QPushButton("Reset")
         self._full_btn.setFixedWidth(52)
