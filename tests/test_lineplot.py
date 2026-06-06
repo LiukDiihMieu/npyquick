@@ -2,10 +2,9 @@
 from __future__ import annotations
 
 import numpy as np
-import pytest
 
 from npyquick.core import limits
-from npyquick.views.lineplot import LineplotCanvas, LineplotView
+from npyquick.views.lineplot import LineplotView
 
 
 def _view() -> LineplotView:
