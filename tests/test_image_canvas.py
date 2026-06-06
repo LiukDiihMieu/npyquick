@@ -78,11 +78,12 @@ def _make_canvas() -> ImageCanvas:
     return ImageCanvas(ProfileCanvas())
 
 
-def test_prepare_rgb_uint8_divides_by_255():
+def test_prepare_rgb_uint8_passthrough():
     data = np.full((4, 4, 3), 128, dtype=np.uint8)
     display, norm_str = ImageCanvas._prepare_rgb(data)
-    np.testing.assert_allclose(display, 128 / 255, atol=1e-6)
-    assert "255" in norm_str
+    assert display.dtype == np.uint8
+    np.testing.assert_array_equal(display, 128)
+    assert "as-is" in norm_str
 
 
 def test_prepare_rgb_uint16_divides_by_65535():

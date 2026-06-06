@@ -162,7 +162,15 @@ class ImageCanvas(FigureCanvas):
 
     @staticmethod
     def _prepare_rgb(data: np.ndarray) -> tuple[np.ndarray, str]:
-        d = data[:, :, :3].astype(float)
+        rgb = data[:, :, :3]
+        if rgb.dtype == np.uint8:
+            # imshow renders uint8 RGB in [0, 255] directly, so skip the float
+            # copy entirely (the common case). Profile sampling then reports raw
+            # 0-255 channel values, which is the natural scale for 8-bit color.
+            return np.asarray(rgb), "uint8 [0, 255] — as-is"
+        # Other dtypes need normalization for imshow; float32 halves the copy
+        # cost versus float64 with no visible difference at display precision.
+        d = rgb.astype(np.float32)
         if np.issubdtype(data.dtype, np.integer):
             maxval = np.iinfo(data.dtype).max
             d = d / maxval
