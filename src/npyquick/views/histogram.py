@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QSettings
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget,
 )
@@ -59,6 +59,7 @@ class HistogramCanvas(ExportableMixin, FigureCanvas):
         self._vtext_lo = None
         self._vtext_hi = None
 
+        self.mpl_connect("button_press_event", self._on_press)
         self.mpl_connect("motion_notify_event", self._on_motion)
         self.mpl_connect("axes_leave_event", self._on_axes_leave)
         self.mpl_connect("scroll_event", self._on_scroll)
@@ -119,12 +120,14 @@ class HistogramCanvas(ExportableMixin, FigureCanvas):
         tr = self._ax.get_xaxis_transform()
         self._vtext_lo = self._ax.text(
             vmin, 0.98, "vmin", transform=tr,
-            ha="center", va="top", color="tomato", fontsize=7,
+            ha="center", va="top", color="tomato", fontsize=7, clip_on=True,
         )
+        self._vtext_lo.set_in_layout(False)
         self._vtext_hi = self._ax.text(
             vmax, 0.98, "vmax", transform=tr,
-            ha="center", va="top", color="tomato", fontsize=7,
+            ha="center", va="top", color="tomato", fontsize=7, clip_on=True,
         )
+        self._vtext_hi.set_in_layout(False)
 
     def set_bins(self, n: int | str) -> None:
         self._n_bins = n
@@ -153,6 +156,10 @@ class HistogramCanvas(ExportableMixin, FigureCanvas):
         if self._clim is not None and self._edges is not None:
             self._draw_clim_markers(*self._clim)
         self.draw_idle()
+
+    def _on_press(self, ev) -> None:
+        if ev.dblclick and ev.inaxes is self._ax:
+            self.xlim_full()
 
     def _on_motion(self, ev) -> None:
         if ev.inaxes is not self._ax or self._edges is None or ev.xdata is None:
@@ -199,13 +206,23 @@ class HistogramView(BaseView):
         self._status: str = ""
         self._canvas = HistogramCanvas()
 
+        _s = QSettings("npyquick", "npyquick")
+
         self._bins_combo = QComboBox()
         self._bins_combo.addItems(_BIN_OPTIONS)
         self._bins_combo.setFixedWidth(80)
         self._bins_combo.currentTextChanged.connect(self._on_bins_changed)
+        _saved_bins = _s.value("histogram_bins", "auto")
+        if _saved_bins in _BIN_OPTIONS:
+            self._bins_combo.setCurrentText(_saved_bins)
 
         self._log_check = QCheckBox("Log scale")
         self._log_check.toggled.connect(self._canvas.set_log_scale)
+        self._log_check.toggled.connect(
+            lambda checked: QSettings("npyquick", "npyquick").setValue("histogram_log", checked)
+        )
+        if _s.value("histogram_log", False, type=bool):
+            self._log_check.setChecked(True)
 
         self._full_btn = QPushButton("Full")
         self._full_btn.setFixedWidth(48)
@@ -312,4 +329,5 @@ class HistogramView(BaseView):
         self._canvas.set_on_status(cb)
 
     def _on_bins_changed(self, text: str) -> None:
+        QSettings("npyquick", "npyquick").setValue("histogram_bins", text)
         self._canvas.set_bins(text if text == "auto" else int(text))
