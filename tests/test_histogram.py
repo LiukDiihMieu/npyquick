@@ -82,7 +82,7 @@ def test_set_data_all_nan_shows_no_finite_message():
 
 def test_canvas_plot_does_not_crash():
     c = HistogramCanvas()
-    c.plot(np.random.rand(100).astype(np.float32))
+    c.plot(np.random.default_rng(0).random(100).astype(np.float32))
 
 
 def test_canvas_plot_all_nan_does_not_crash():
