@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+import io
 import os
 import re
 from typing import TYPE_CHECKING
 
 import numpy as np
 from PySide6.QtCore import QSettings
-from PySide6.QtWidgets import QFileDialog, QMenu, QWidget
+from PySide6.QtGui import QImage
+from PySide6.QtWidgets import QApplication, QFileDialog, QMenu, QWidget
 
 if TYPE_CHECKING:
     from ..core.stats import ArrayStats
@@ -19,7 +21,14 @@ class ExportableMixin:
     def contextMenuEvent(self, ev) -> None:
         menu = QMenu(self)
         menu.addAction("Export this plot…", self._export_figure)
+        menu.addAction("Copy to clipboard", self._copy_to_clipboard)
         menu.exec(ev.globalPos())
+
+    def _copy_to_clipboard(self) -> None:
+        buf = io.BytesIO()
+        self.figure.savefig(buf, format="png", dpi=300, bbox_inches="tight")
+        buf.seek(0)
+        QApplication.clipboard().setImage(QImage.fromData(buf.getvalue()))
 
     def _export_figure(self) -> None:
         s = QSettings("npyquick", "npyquick")
@@ -37,7 +46,7 @@ class ExportableMixin:
             if not path.lower().endswith(ext):
                 path += ext
         s.setValue("last_export_dir", os.path.dirname(os.path.abspath(path)))
-        self.figure.savefig(path, dpi=150, bbox_inches="tight")
+        self.figure.savefig(path, dpi=300, bbox_inches="tight")
 
 
 class SpatialView:
