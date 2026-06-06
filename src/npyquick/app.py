@@ -151,7 +151,7 @@ class MainWindow(QMainWindow):
         # selected. Lives in the stack at an index that has no corresponding tab.
         self._empty_label = QLabel()
         self._empty_label.setAlignment(Qt.AlignCenter)
-        self._empty_label.setStyleSheet("color: #888; font-size: 13px;")
+        self._empty_label.setStyleSheet("color: #888; font-size: 16px;")
         self._empty_label.setWordWrap(True)
         self._empty_page = QWidget()
         _ep_layout = QVBoxLayout(self._empty_page)
