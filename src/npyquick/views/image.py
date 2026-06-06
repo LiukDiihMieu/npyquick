@@ -135,7 +135,10 @@ class ImageCanvas(FigureCanvas):
                 display, origin="upper", interpolation="nearest", extent=extent,
             )
         else:
-            self._disp = np.asarray(sub, dtype=float)
+            # Keep the native dtype: imshow normalizes through clim, so a float64
+            # copy here would only cost 2-8x memory for nothing. Profile sampling
+            # reads this array with output=float to stay correct on integer data.
+            self._disp = np.asarray(sub)
             self._im = self._ax.imshow(
                 self._disp, cmap=self._colormap,
                 origin="upper", interpolation="nearest", extent=extent,
