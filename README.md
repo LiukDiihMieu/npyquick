@@ -36,7 +36,7 @@ Displays 2D and RGB arrays as an interactive image.
 - 2D numeric arrays — any dtype (float32/64, uint8/16, int16/32, …)
 - `(H, W, 3)` RGB arrays — uint8, uint16, and float32/64
 
-**Normalization (RGB only):** integer types are scaled by their dtype maximum (e.g. uint16 ÷ 65535); float arrays outside [0, 1] are globally min-max stretched. The applied strategy is shown in the control bar.
+**Normalization (RGB only):** uint8 is displayed directly in [0, 255] with no scaling; other integer types are scaled by their dtype maximum (e.g. uint16 ÷ 65535); float arrays outside [0, 1] are globally min-max stretched. The applied strategy is shown in the control bar.
 
 **Interactions:**
 - Scroll to zoom, left-drag to pan, double-click to reset zoom
@@ -175,7 +175,3 @@ restarting the file manager or logging out and back in before the menu updates.
 
 - [ ] `>2D` array slicer
 - [ ] Complex array support (real / imaginary / magnitude / phase)
-- [ ] Image view: drop the redundant float64 conversion in `ImageCanvas` — let
-      matplotlib display `uint8`/`int16`/`uint16`/`float32` grayscale and `uint8`
-      RGB natively (avoids a 2–8× memory blow-up); confine `astype(float)` to the
-      profile sampler that actually needs it
