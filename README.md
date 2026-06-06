@@ -175,3 +175,10 @@ restarting the file manager or logging out and back in before the menu updates.
 
 - [ ] `>2D` array slicer
 - [ ] Complex array support (real / imaginary / magnitude / phase)
+
+## License
+
+Copyright 2026 LiukDiihMieu
+
+This project is licensed under the **GNU General Public License v3.0 or later**.
+See the [LICENSE](LICENSE) file for details.
