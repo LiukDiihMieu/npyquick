@@ -137,3 +137,29 @@ def test_reset_zoom_with_data():
     v = _view()
     v.set_data(np.arange(50, dtype=np.float32))
     v._canvas.reset_zoom()           # must not crash
+
+
+# ---------------------------------------------------------------------------
+# Log checkbox enable/disable based on data sign
+# ---------------------------------------------------------------------------
+
+def test_log_checkboxes_disabled_when_no_positive_y():
+    v = _view()
+    v.set_data(np.full(20, -1.0, dtype=np.float32))
+    assert not v._log_y_check.isEnabled()
+
+
+def test_log_x_disabled_when_no_positive_x():
+    v = _view()
+    # (2, N) with all-negative x values
+    x = np.full(20, -1.0)
+    y = np.ones(20)
+    v.set_data(np.stack([x, y]))
+    assert not v._log_x_check.isEnabled()
+
+
+def test_log_checkboxes_enabled_when_data_has_positive():
+    v = _view()
+    v.set_data(np.arange(1, 21, dtype=np.float32))
+    assert v._log_x_check.isEnabled()
+    assert v._log_y_check.isEnabled()

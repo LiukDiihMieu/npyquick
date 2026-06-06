@@ -169,13 +169,12 @@ class MainWindow(QMainWindow):
         self._stack.setCurrentIndex(index)
         self._views[index].refresh_status()
 
-    def _set_tabs_enabled(self, compatible: list[str]) -> None:
+    def _set_tabs_enabled(self, compatible: list[str], preferred: str | None = None) -> None:
         for i, v in enumerate(self._views):
-            enabled = v.VIEW_ID in compatible
-            self._tabs.setTabEnabled(i, enabled)
-        # switch to first enabled tab
+            self._tabs.setTabEnabled(i, v.VIEW_ID in compatible)
+        target = preferred if preferred in compatible else None
         for i, v in enumerate(self._views):
-            if v.VIEW_ID in compatible:
+            if v.VIEW_ID == target or (target is None and v.VIEW_ID in compatible):
                 self._tabs.setCurrentIndex(i)
                 self._stack.setCurrentIndex(i)
                 break
@@ -245,7 +244,8 @@ class MainWindow(QMainWindow):
             self._histogram_view.update_clim_marker(None, None)
         self._apply_pixel_size()
         self._apply_colormap(self._colormap)
-        self._set_tabs_enabled(compatible)
+        preferred = "lineplot" if (array.ndim == 2 and self._lineplot_view.can_handle(array)) else None
+        self._set_tabs_enabled(compatible, preferred)
         self._sb.showMessage(
             f"{os.path.basename(self._current_path)}  |  {_format_array_summary(array)}"
         )

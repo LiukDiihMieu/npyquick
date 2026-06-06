@@ -319,6 +319,15 @@ class LineplotView(BaseView, SpatialView):
         n_total = array.shape[-1]
         n_used = (n_total + self._canvas._stride - 1) // self._canvas._stride
 
+        x_has_pos = bool(np.any(self._canvas._x_disp > 0))
+        y_has_pos = bool(np.any(self._canvas._disp > 0))
+        self._log_x_check.setEnabled(x_has_pos)
+        self._log_y_check.setEnabled(y_has_pos)
+        if not x_has_pos and self._log_x_check.isChecked():
+            self._log_x_check.setChecked(False)
+        if not y_has_pos and self._log_y_check.isChecked():
+            self._log_y_check.setChecked(False)
+
         stats = array_stats(array if array.ndim == 1 else array[1])
         if stats is not None and stats.finite_min is not None:
             self._stats_label.setText(
