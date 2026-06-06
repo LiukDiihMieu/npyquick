@@ -6,17 +6,25 @@ import re
 from typing import TYPE_CHECKING
 
 import numpy as np
-from PySide6.QtCore import QSettings
+from PySide6.QtCore import Qt, QSettings
 from PySide6.QtGui import QImage
-from PySide6.QtWidgets import QApplication, QFileDialog, QMenu, QWidget
+from PySide6.QtWidgets import (
+    QApplication, QFileDialog, QMainWindow, QMenu, QWidget,
+)
 
 if TYPE_CHECKING:
     from ..core.stats import ArrayStats
 
 
 class ExportableMixin:
-    """Right-click context menu for any FigureCanvas subclass."""
+    """Right-click + Ctrl+C clipboard export for any FigureCanvas subclass."""
     panel_name: str = "Figure"
+
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        # matplotlib canvases default to NoFocus; ClickFocus lets a click mark
+        # this panel as the Ctrl+C copy target (resolved via focusWidget in app).
+        self.setFocusPolicy(Qt.ClickFocus)
 
     def contextMenuEvent(self, ev) -> None:
         menu = QMenu(self)
@@ -29,6 +37,9 @@ class ExportableMixin:
         self.figure.savefig(buf, format="png", dpi=300, bbox_inches="tight")
         buf.seek(0)
         QApplication.clipboard().setImage(QImage.fromData(buf.getvalue()))
+        win = self.window()
+        if isinstance(win, QMainWindow):
+            win.statusBar().showMessage(f"{self.panel_name} copied to clipboard", 2000)
 
     def _export_figure(self) -> None:
         s = QSettings("npyquick", "npyquick")

@@ -4,8 +4,9 @@ import os
 
 import numpy as np
 from PySide6.QtCore import QSettings, QUrl
-from PySide6.QtGui import QAction, QActionGroup
+from PySide6.QtGui import QAction, QActionGroup, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
+    QApplication,
     QComboBox,
     QFileDialog,
     QHBoxLayout,
@@ -34,7 +35,7 @@ def _format_array_summary(array: np.ndarray, stats: ArrayStats | None = None) ->
             if stats.has_anomaly:
                 parts.append(stats.anomaly_str())
     return "  |  ".join(parts)
-from .views.base import ColormappedView, SpatialView
+from .views.base import ColormappedView, ExportableMixin, SpatialView
 from .views.histogram import HistogramView
 from .views.image import ImageView
 from .views.lineplot import LineplotView
@@ -64,6 +65,10 @@ class MainWindow(QMainWindow):
 
         self._build_menu()
         self._build_central()
+
+        copy_sc = QShortcut(QKeySequence.StandardKey.Copy, self)
+        copy_sc.activated.connect(self._copy_focused_plot)
+
         self._sb.showMessage("File › Open  (Ctrl+O)  to load a .npy or .npz file.")
 
         geom = _s.value("geometry")
@@ -327,6 +332,16 @@ class MainWindow(QMainWindow):
                 sub.addAction(f"{name}…").triggered.connect(fn)
             a = self._file_menu.insertMenu(self._quit_action, sub)
             self._export_actions.append(a)
+
+    def _copy_focused_plot(self) -> None:
+        """Ctrl+C copies the focused canvas; hints if no panel is selected."""
+        w = QApplication.focusWidget()
+        while w is not None:
+            if isinstance(w, ExportableMixin):
+                w._copy_to_clipboard()
+                return
+            w = w.parentWidget()
+        self._sb.showMessage("Click a plot first, then press Ctrl+C to copy", 2500)
 
     def dragEnterEvent(self, ev) -> None:
         urls = ev.mimeData().urls()
