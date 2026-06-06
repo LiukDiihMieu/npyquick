@@ -68,7 +68,8 @@ def test_table_model_scalar_data_is_value():
 
 # ---------------------------------------------------------------------------
 # ImageView.can_handle — complex arrays fall through to the Table view.
-# (Empty-array rejection is covered by test_image_canvas.py.)
+# (Empty-array rejection lives in test_image_canvas.py alongside the rest of
+# the can_handle coverage.)
 # ---------------------------------------------------------------------------
 
 def test_image_rejects_complex_2d():

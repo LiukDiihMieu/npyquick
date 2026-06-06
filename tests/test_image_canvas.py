@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from npyquick.views.image import ImageCanvas, ImageView, ProfileCanvas
 
@@ -68,6 +69,18 @@ def test_can_handle_classmethod():
     assert ImageView.can_handle(np.zeros((10, 10, 3), dtype=np.uint8)) is True
     assert ImageView.can_handle(np.zeros((10, 10, 4), dtype=np.uint8)) is False
     assert ImageView.can_handle(np.arange(10)) is False
+
+
+@pytest.mark.parametrize("shape", [
+    (0, 5),       # empty rows, 2D
+    (5, 0),       # empty cols, 2D
+    (0, 0),       # empty 2D
+    (0, 5, 3),    # empty RGB
+])
+def test_can_handle_rejects_empty_arrays(shape):
+    """Guards the `array.size > 0` check in can_handle for both 2D and RGB —
+    a zero-element array would otherwise crash imshow at render time."""
+    assert ImageView.can_handle(np.empty(shape, dtype=float)) is False
 
 
 # ---------------------------------------------------------------------------
