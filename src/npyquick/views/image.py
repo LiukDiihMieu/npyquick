@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
 from ..core import limits
 from ..core.coord import PixelTransform
 from ..core.profile import compute_profile
-from ..core.stats import array_stats, is_real_numeric
+from ..core.stats import ArrayStats, array_stats, is_real_numeric
 from .base import BaseView, ColormappedView, SpatialView
 
 
@@ -458,7 +458,7 @@ class ImageView(BaseView, SpatialView, ColormappedView):
             return is_real_numeric(array)
         return False
 
-    def set_data(self, array: np.ndarray) -> None:
+    def set_data(self, array: np.ndarray, stats: ArrayStats | None = None) -> None:
         norm_str, downsample_str = self._canvas.load(array)
         if downsample_str is not None:
             self._downsample_label.setText(downsample_str)
@@ -477,7 +477,8 @@ class ImageView(BaseView, SpatialView, ColormappedView):
         else:
             self._norm_label.setText("")
             self._norm_label.setVisible(False)
-        stats = array_stats(array)
+        if stats is None:
+            stats = array_stats(array)
         if stats is not None and stats.has_anomaly:
             self._anomaly_label.setText(stats.anomaly_str())
             self._anomaly_label.setVisible(True)

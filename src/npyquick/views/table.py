@@ -8,7 +8,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..core import limits
-from ..core.stats import array_stats
+from ..core.stats import ArrayStats, array_stats
 from .base import BaseView
 
 
@@ -120,7 +120,7 @@ class RawTableView(BaseView):
     def can_handle(cls, array: np.ndarray) -> bool:
         return True
 
-    def set_data(self, array: np.ndarray) -> None:
+    def set_data(self, array: np.ndarray, stats: ArrayStats | None = None) -> None:
         if array.ndim == 3 and array.shape[2] == 3:
             for i, model in enumerate(self._rgb_models):
                 model.set_array(array[:, :, i])
@@ -156,7 +156,8 @@ class RawTableView(BaseView):
         else:
             self._trunc_label.setVisible(False)
 
-        stats = array_stats(array)
+        if stats is None:
+            stats = array_stats(array)
         if stats is not None and stats.has_anomaly:
             self._status += f"  |  {stats.anomaly_str()}"
         self._info.setText(self._status)

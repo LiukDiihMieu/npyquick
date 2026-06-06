@@ -307,7 +307,9 @@ class LineplotView(BaseView):
             return array.shape[0] > 2   # (N, 2) column-based x-y
         return False
 
-    def set_data(self, array: np.ndarray) -> None:
+    def set_data(self, array: np.ndarray, _stats=None) -> None:
+        # _stats is the full-array summary from app.py; the line plot reports
+        # y-only min/max, so it recomputes on the y slice below instead.
         self._canvas.load(array)
 
         n_total = self._canvas._data.shape[0] if self._canvas._col_xy else self._canvas._data.shape[-1]
