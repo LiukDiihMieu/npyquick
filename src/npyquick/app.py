@@ -4,8 +4,9 @@ import os
 
 import numpy as np
 from PySide6.QtCore import QSettings, QUrl
-from PySide6.QtGui import QAction, QActionGroup
+from PySide6.QtGui import QAction, QActionGroup, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
+    QApplication,
     QComboBox,
     QFileDialog,
     QHBoxLayout,
@@ -34,7 +35,7 @@ def _format_array_summary(array: np.ndarray, stats: ArrayStats | None = None) ->
             if stats.has_anomaly:
                 parts.append(stats.anomaly_str())
     return "  |  ".join(parts)
-from .views.base import ColormappedView, SpatialView
+from .views.base import ColormappedView, ExportableMixin, SpatialView
 from .views.histogram import HistogramView
 from .views.image import ImageView
 from .views.lineplot import LineplotView
@@ -64,6 +65,12 @@ class MainWindow(QMainWindow):
 
         self._build_menu()
         self._build_central()
+
+        copy_sc = QShortcut(QKeySequence.StandardKey.Copy, self)
+        copy_sc.activated.connect(self._copy_focused_plot)
+        save_sc = QShortcut(QKeySequence.StandardKey.Save, self)
+        save_sc.activated.connect(self._export_focused_plot)
+
         self._sb.showMessage("File › Open  (Ctrl+O)  to load a .npy or .npz file.")
 
         geom = _s.value("geometry")
@@ -76,6 +83,9 @@ class MainWindow(QMainWindow):
 
     def _build_menu(self) -> None:
         fm = self.menuBar().addMenu("&File")
+        self._file_menu = fm
+        self._export_actions: list = []
+
         open_a = QAction("&Open…", self)
         open_a.setShortcut("Ctrl+O")
         open_a.triggered.connect(self.open_file)
@@ -85,6 +95,9 @@ class MainWindow(QMainWindow):
         quit_a.setShortcut("Ctrl+Q")
         quit_a.triggered.connect(self.close)
         fm.addAction(quit_a)
+        self._quit_action = quit_a
+
+        fm.aboutToShow.connect(self._rebuild_export_menu)
 
         vm = self.menuBar().addMenu("&View")
         px_action = QAction("Set Pixel Size…", self)
@@ -292,6 +305,72 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
     # Drag and drop
     # ------------------------------------------------------------------
+
+    def _has_data(self) -> bool:
+        """Single source of truth for whether plots can be exported."""
+        return self._model.array is not None
+
+    def _rebuild_export_menu(self) -> None:
+        for a in self._export_actions:
+            self._file_menu.removeAction(a)
+        self._export_actions.clear()
+
+        sep = self._file_menu.insertSeparator(self._quit_action)
+        self._export_actions.append(sep)
+
+        targets = (
+            self._views[self._tabs.currentIndex()].export_targets()
+            if self._has_data() else []
+        )
+
+        if not targets:
+            a = QAction("Export Plot", self)
+            a.setEnabled(False)
+            self._file_menu.insertAction(self._quit_action, a)
+            self._export_actions.append(a)
+        elif len(targets) == 1:
+            _, fn = targets[0]
+            a = QAction("Export Plot…", self)
+            a.triggered.connect(fn)
+            self._file_menu.insertAction(self._quit_action, a)
+            self._export_actions.append(a)
+        else:
+            from PySide6.QtWidgets import QMenu
+            sub = QMenu("Export Plot", self)
+            for name, fn in targets:
+                sub.addAction(f"{name}…").triggered.connect(fn)
+            a = self._file_menu.insertMenu(self._quit_action, sub)
+            self._export_actions.append(a)
+
+    def _focused_canvas(self) -> ExportableMixin | None:
+        w = QApplication.focusWidget()
+        while w is not None:
+            if isinstance(w, ExportableMixin):
+                return w
+            w = w.parentWidget()
+        return None
+
+    def _copy_focused_plot(self) -> None:
+        """Ctrl+C copies the focused canvas; hints if nothing is exportable."""
+        if not self._has_data():
+            self._sb.showMessage("No plot loaded — open a file first", 2500)
+            return
+        canvas = self._focused_canvas()
+        if canvas is None:
+            self._sb.showMessage("Click a plot first, then press Ctrl+C to copy", 2500)
+            return
+        canvas._copy_to_clipboard()
+
+    def _export_focused_plot(self) -> None:
+        """Ctrl+S exports the focused canvas; hints if nothing is exportable."""
+        if not self._has_data():
+            self._sb.showMessage("No plot loaded — open a file first", 2500)
+            return
+        canvas = self._focused_canvas()
+        if canvas is None:
+            self._sb.showMessage("Click a plot first, then press Ctrl+S to export", 2500)
+            return
+        canvas._export_figure()
 
     def dragEnterEvent(self, ev) -> None:
         urls = ev.mimeData().urls()
