@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (
 
 from ..core import limits
 from ..core.stats import ArrayStats, array_stats, is_real_numeric
-from .base import BaseView
+from .base import BaseView, ExportableMixin
 
 _BIN_OPTIONS = ["auto", "64", "128", "256", "512"]
 
@@ -35,7 +35,8 @@ def finite_sample(array: np.ndarray) -> tuple[np.ndarray, int, int]:
     return finite, n_total, n_used
 
 
-class HistogramCanvas(FigureCanvas):
+class HistogramCanvas(ExportableMixin, FigureCanvas):
+    panel_name = "Histogram"
     def __init__(self) -> None:
         self._fig = Figure(constrained_layout=True)
         super().__init__(self._fig)
@@ -300,6 +301,9 @@ class HistogramView(BaseView):
 
     def refresh_status(self) -> None:
         self._on_status(self._status)
+
+    def export_targets(self):
+        return [("Histogram", self._canvas._export_figure)]
 
     def set_on_status(self, cb: callable) -> None:
         super().set_on_status(cb)

@@ -1,12 +1,43 @@
 from __future__ import annotations
 
+import os
+import re
 from typing import TYPE_CHECKING
 
 import numpy as np
-from PySide6.QtWidgets import QWidget
+from PySide6.QtCore import QSettings
+from PySide6.QtWidgets import QFileDialog, QMenu, QWidget
 
 if TYPE_CHECKING:
     from ..core.stats import ArrayStats
+
+
+class ExportableMixin:
+    """Right-click context menu for any FigureCanvas subclass."""
+    panel_name: str = "Figure"
+
+    def contextMenuEvent(self, ev) -> None:
+        menu = QMenu(self)
+        menu.addAction("Export this plot…", self._export_figure)
+        menu.exec(ev.globalPos())
+
+    def _export_figure(self) -> None:
+        s = QSettings("npyquick", "npyquick")
+        start = s.value("last_export_dir") or s.value("last_dir", "")
+        path, selected_filter = QFileDialog.getSaveFileName(
+            self, f"Export {self.panel_name}", start,
+            "PNG (*.png);;SVG (*.svg);;PDF (*.pdf)",
+        )
+        if not path:
+            return
+        # Qt does not auto-append the extension — extract it from the chosen filter.
+        m = re.search(r'\*(\.\w+)', selected_filter)
+        if m:
+            ext = m.group(1).lower()
+            if not path.lower().endswith(ext):
+                path += ext
+        s.setValue("last_export_dir", os.path.dirname(os.path.abspath(path)))
+        self.figure.savefig(path, dpi=150, bbox_inches="tight")
 
 
 class SpatialView:
@@ -41,3 +72,7 @@ class BaseView(QWidget):
 
     def set_data(self, array: np.ndarray, stats: ArrayStats | None = None) -> None:
         raise NotImplementedError
+
+    def export_targets(self) -> list[tuple[str, callable]]:
+        """Return [(panel_name, export_fn), …] for File › Export Plot menu."""
+        return []

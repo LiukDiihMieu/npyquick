@@ -10,10 +10,11 @@ from PySide6.QtWidgets import (
 
 from ..core import limits
 from ..core.stats import ArrayStats, array_stats, is_real_numeric
-from .base import BaseView
+from .base import BaseView, ExportableMixin
 
 
-class LineplotCanvas(FigureCanvas):
+class LineplotCanvas(ExportableMixin, FigureCanvas):
+    panel_name = "Line Plot"
     def __init__(self, on_status: callable) -> None:
         self._fig = Figure(constrained_layout=True)
         self._ax = self._fig.add_subplot(111)
@@ -355,3 +356,6 @@ class LineplotView(BaseView):
     def refresh_status(self) -> None:
         s = self._canvas.status_str()
         self._on_status(s if s else self._status)
+
+    def export_targets(self):
+        return [("Line Plot", self._canvas._export_figure)]

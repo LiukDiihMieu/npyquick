@@ -76,6 +76,9 @@ class MainWindow(QMainWindow):
 
     def _build_menu(self) -> None:
         fm = self.menuBar().addMenu("&File")
+        self._file_menu = fm
+        self._export_actions: list = []
+
         open_a = QAction("&Open…", self)
         open_a.setShortcut("Ctrl+O")
         open_a.triggered.connect(self.open_file)
@@ -85,6 +88,9 @@ class MainWindow(QMainWindow):
         quit_a.setShortcut("Ctrl+Q")
         quit_a.triggered.connect(self.close)
         fm.addAction(quit_a)
+        self._quit_action = quit_a
+
+        fm.aboutToShow.connect(self._rebuild_export_menu)
 
         vm = self.menuBar().addMenu("&View")
         px_action = QAction("Set Pixel Size…", self)
@@ -292,6 +298,35 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
     # Drag and drop
     # ------------------------------------------------------------------
+
+    def _rebuild_export_menu(self) -> None:
+        for a in self._export_actions:
+            self._file_menu.removeAction(a)
+        self._export_actions.clear()
+
+        sep = self._file_menu.insertSeparator(self._quit_action)
+        self._export_actions.append(sep)
+
+        targets = self._views[self._tabs.currentIndex()].export_targets()
+
+        if not targets:
+            a = QAction("Export Plot", self)
+            a.setEnabled(False)
+            self._file_menu.insertAction(self._quit_action, a)
+            self._export_actions.append(a)
+        elif len(targets) == 1:
+            _, fn = targets[0]
+            a = QAction("Export Plot…", self)
+            a.triggered.connect(fn)
+            self._file_menu.insertAction(self._quit_action, a)
+            self._export_actions.append(a)
+        else:
+            from PySide6.QtWidgets import QMenu
+            sub = QMenu("Export Plot", self)
+            for name, fn in targets:
+                sub.addAction(f"{name}…").triggered.connect(fn)
+            a = self._file_menu.insertMenu(self._quit_action, sub)
+            self._export_actions.append(a)
 
     def dragEnterEvent(self, ev) -> None:
         urls = ev.mimeData().urls()

@@ -12,10 +12,12 @@ from ..core import limits
 from ..core.coord import PixelTransform
 from ..core.profile import compute_profile
 from ..core.stats import ArrayStats, array_stats, is_real_numeric
-from .base import BaseView, ColormappedView, SpatialView
+from .base import BaseView, ColormappedView, ExportableMixin, SpatialView
 
 
-class ProfileCanvas(FigureCanvas):
+class ProfileCanvas(ExportableMixin, FigureCanvas):
+    panel_name = "Profile"
+
     def __init__(self) -> None:
         fig = Figure(constrained_layout=True)
         self._ax = fig.add_subplot(111)
@@ -73,8 +75,9 @@ class ProfileCanvas(FigureCanvas):
         self.draw_idle()
 
 
-class ImageCanvas(FigureCanvas):
+class ImageCanvas(ExportableMixin, FigureCanvas):
     _HIT_RADIUS = 12
+    panel_name = "Image"
 
     def __init__(self, profile: ProfileCanvas) -> None:
         self._fig = Figure(constrained_layout=True)
@@ -509,6 +512,10 @@ class ImageView(BaseView, SpatialView, ColormappedView):
 
     def refresh_status(self) -> None:
         self._on_status(self._canvas.status_str())
+
+    def export_targets(self):
+        return [("Image", self._canvas._export_figure),
+                ("Profile", self._profile._export_figure)]
 
     def set_on_clim_change(self, cb: callable) -> None:
         self._on_clim_change = cb
