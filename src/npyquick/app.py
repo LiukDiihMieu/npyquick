@@ -68,6 +68,8 @@ class MainWindow(QMainWindow):
 
         copy_sc = QShortcut(QKeySequence.StandardKey.Copy, self)
         copy_sc.activated.connect(self._copy_focused_plot)
+        save_sc = QShortcut(QKeySequence.StandardKey.Save, self)
+        save_sc.activated.connect(self._export_focused_plot)
 
         self._sb.showMessage("File › Open  (Ctrl+O)  to load a .npy or .npz file.")
 
@@ -333,15 +335,29 @@ class MainWindow(QMainWindow):
             a = self._file_menu.insertMenu(self._quit_action, sub)
             self._export_actions.append(a)
 
-    def _copy_focused_plot(self) -> None:
-        """Ctrl+C copies the focused canvas; hints if no panel is selected."""
+    def _focused_canvas(self) -> ExportableMixin | None:
         w = QApplication.focusWidget()
         while w is not None:
             if isinstance(w, ExportableMixin):
-                w._copy_to_clipboard()
-                return
+                return w
             w = w.parentWidget()
-        self._sb.showMessage("Click a plot first, then press Ctrl+C to copy", 2500)
+        return None
+
+    def _copy_focused_plot(self) -> None:
+        """Ctrl+C copies the focused canvas; hints if no panel is selected."""
+        canvas = self._focused_canvas()
+        if canvas is None:
+            self._sb.showMessage("Click a plot first, then press Ctrl+C to copy", 2500)
+            return
+        canvas._copy_to_clipboard()
+
+    def _export_focused_plot(self) -> None:
+        """Ctrl+S exports the focused canvas; hints if no panel is selected."""
+        canvas = self._focused_canvas()
+        if canvas is None:
+            self._sb.showMessage("Click a plot first, then press Ctrl+S to export", 2500)
+            return
+        canvas._export_figure()
 
     def dragEnterEvent(self, ev) -> None:
         urls = ev.mimeData().urls()
