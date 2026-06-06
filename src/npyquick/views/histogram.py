@@ -59,6 +59,7 @@ class HistogramCanvas(ExportableMixin, FigureCanvas):
         self._vtext_lo = None
         self._vtext_hi = None
 
+        self.mpl_connect("button_press_event", self._on_press)
         self.mpl_connect("motion_notify_event", self._on_motion)
         self.mpl_connect("axes_leave_event", self._on_axes_leave)
         self.mpl_connect("scroll_event", self._on_scroll)
@@ -153,6 +154,10 @@ class HistogramCanvas(ExportableMixin, FigureCanvas):
         if self._clim is not None and self._edges is not None:
             self._draw_clim_markers(*self._clim)
         self.draw_idle()
+
+    def _on_press(self, ev) -> None:
+        if ev.dblclick and ev.inaxes is self._ax:
+            self.xlim_full()
 
     def _on_motion(self, ev) -> None:
         if ev.inaxes is not self._ax or self._edges is None or ev.xdata is None:

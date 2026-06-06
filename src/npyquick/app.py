@@ -6,7 +6,7 @@ from __future__ import annotations
 import os
 
 import numpy as np
-from PySide6.QtCore import QSettings, QUrl
+from PySide6.QtCore import Qt, QSettings, QUrl
 from PySide6.QtGui import QAction, QActionGroup, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
@@ -136,8 +136,8 @@ class MainWindow(QMainWindow):
         self._histogram_view = HistogramView()
 
         self._views: list = [
-            self._image_view, self._lineplot_view,
-            self._table_view, self._histogram_view,
+            self._image_view, self._histogram_view,
+            self._lineplot_view, self._table_view,
         ]
         for v in self._views:
             v.set_on_status(self._sb.showMessage)
@@ -146,6 +146,17 @@ class MainWindow(QMainWindow):
         self._stack = QStackedWidget()
         for v in self._views:
             self._stack.addWidget(v)
+
+        # Empty-state page — shown when no data is loaded or no npz member is
+        # selected. Lives in the stack at an index that has no corresponding tab.
+        self._empty_label = QLabel()
+        self._empty_label.setAlignment(Qt.AlignCenter)
+        self._empty_label.setStyleSheet("color: #888; font-size: 13px;")
+        self._empty_label.setWordWrap(True)
+        self._empty_page = QWidget()
+        _ep_layout = QVBoxLayout(self._empty_page)
+        _ep_layout.addWidget(self._empty_label)
+        self._stack.addWidget(self._empty_page)
 
         self._tabs = QTabBar()
         for v in self._views:
@@ -177,18 +188,32 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(container)
 
         self._set_tabs_enabled([])
+        self._show_empty(
+            "Open a .npy or .npz file\n\n"
+            "File › Open  (Ctrl+O)  or drag a file onto the window"
+        )
 
     # ------------------------------------------------------------------
     # Tab state
     # ------------------------------------------------------------------
 
+    def _show_empty(self, msg: str) -> None:
+        self._empty_label.setText(msg)
+        self._stack.setCurrentWidget(self._empty_page)
+        self._tabs.setVisible(False)
+
     def _on_tab_changed(self, index: int) -> None:
+        if self._stack.currentWidget() is self._empty_page:
+            return
         self._stack.setCurrentIndex(index)
         self._views[index].refresh_status()
 
     def _set_tabs_enabled(self, compatible: list[str], preferred: str | None = None) -> None:
         for i, v in enumerate(self._views):
             self._tabs.setTabEnabled(i, v.VIEW_ID in compatible)
+        self._tabs.setVisible(bool(compatible))
+        if not compatible:
+            return
         target = preferred if preferred in compatible else None
         for i, v in enumerate(self._views):
             if v.VIEW_ID == target or (target is None and v.VIEW_ID in compatible):
@@ -237,6 +262,7 @@ class MainWindow(QMainWindow):
             self._array_combo.blockSignals(False)
             self._array_bar.setVisible(True)
             self._set_tabs_enabled([])
+            self._show_empty("Select an array from the dropdown above")
             n = len(metas)
             self._sb.showMessage(
                 f"{os.path.basename(path)}  |  .npz  {n} array{'s' if n != 1 else ''}"
@@ -264,7 +290,7 @@ class MainWindow(QMainWindow):
             self._histogram_view.update_clim_marker(None, None)
         self._apply_pixel_size()
         self._apply_colormap(self._colormap)
-        preferred = "lineplot" if (array.ndim == 2 and self._lineplot_view.can_handle(array)) else None
+        preferred = "lineplot" if self._lineplot_view.can_handle(array) else None
         self._set_tabs_enabled(compatible, preferred)
         self._sb.showMessage(
             f"{os.path.basename(self._current_path)}  |  {_format_array_summary(array, stats)}"

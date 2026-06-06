@@ -422,8 +422,6 @@ class ImageView(BaseView, SpatialView, ColormappedView):
 
         self._vmin_edit = QLineEdit()
         self._vmax_edit = QLineEdit()
-        self._vmin_edit.setPlaceholderText("vmin")
-        self._vmax_edit.setPlaceholderText("vmax")
         self._vmin_edit.setFixedWidth(90)
         self._vmax_edit.setFixedWidth(90)
         self._apply_btn = QPushButton("Apply")
@@ -446,7 +444,7 @@ class ImageView(BaseView, SpatialView, ColormappedView):
 
         ctrl = QWidget()
         ctrl_layout = QHBoxLayout(ctrl)
-        ctrl_layout.setContentsMargins(6, 2, 6, 2)
+        ctrl_layout.setContentsMargins(6, 3, 6, 3)
         ctrl_layout.addWidget(QLabel("vmin:"))
         ctrl_layout.addWidget(self._vmin_edit)
         ctrl_layout.addWidget(QLabel("vmax:"))
