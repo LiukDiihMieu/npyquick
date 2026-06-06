@@ -18,16 +18,17 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .core.stats import array_stats
+from .core.stats import ArrayStats, array_stats
 from .model import NpyDataModel
 
 
-def _format_array_summary(array: np.ndarray) -> str:
+def _format_array_summary(array: np.ndarray, stats: ArrayStats | None = None) -> str:
     parts = [f"shape {array.shape}", f"dtype {array.dtype}"]
     if array.size == 0:
         parts.append("empty")
     else:
-        stats = array_stats(array)
+        if stats is None:
+            stats = array_stats(array)
         if stats is not None:
             parts.append(stats.range_str())
             if stats.has_anomaly:
@@ -234,10 +235,13 @@ class MainWindow(QMainWindow):
         array = self._model.array
         if array is None:
             return  # .npz with no member selected yet — nothing to display
+        # Compute once and fan out to every view + the status summary, instead of
+        # each consumer re-sampling and re-scanning the same array.
+        stats = array_stats(array)
         compatible = [v.VIEW_ID for v in self._views if v.can_handle(array)]
         for v in self._views:
             if v.VIEW_ID in compatible:
-                v.set_data(array)
+                v.set_data(array, stats)
         if self._image_view.can_handle(array):
             self._histogram_view.update_clim_marker(*self._image_view.get_clim())
         else:
@@ -247,7 +251,7 @@ class MainWindow(QMainWindow):
         preferred = "lineplot" if (array.ndim == 2 and self._lineplot_view.can_handle(array)) else None
         self._set_tabs_enabled(compatible, preferred)
         self._sb.showMessage(
-            f"{os.path.basename(self._current_path)}  |  {_format_array_summary(array)}"
+            f"{os.path.basename(self._current_path)}  |  {_format_array_summary(array, stats)}"
         )
 
     def _on_array_selected(self, index: int) -> None:

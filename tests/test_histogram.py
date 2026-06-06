@@ -223,3 +223,44 @@ def test_clim_marker_preserved_when_switching_between_images():
     iv.set_data(img_b)
     _simulate_refresh(iv, hv, img_b)
     assert hv._canvas._clim is not None
+
+
+# ---------------------------------------------------------------------------
+# no re-sample on bins / log-scale changes
+# ---------------------------------------------------------------------------
+
+def test_histogram_set_bins_reuses_cached_sample(monkeypatch):
+    calls = 0
+
+    def fake_finite_sample(array):
+        nonlocal calls
+        calls += 1
+        return np.asarray(array), array.size, array.size
+
+    monkeypatch.setattr("npyquick.views.histogram.finite_sample", fake_finite_sample)
+
+    canvas = HistogramCanvas()
+    arr = np.arange(100)
+    canvas.plot(arr)
+    assert calls == 1
+
+    canvas.set_bins(64)
+    assert calls == 1
+
+
+def test_histogram_log_toggle_does_not_rerender_or_resample(monkeypatch):
+    canvas = HistogramCanvas()
+    arr = np.arange(100)
+    canvas.plot(arr)
+
+    called = False
+
+    def fail_render():
+        nonlocal called
+        called = True
+
+    monkeypatch.setattr(canvas, "_render", fail_render)
+    canvas.set_log_scale(True)
+
+    assert called is False
+    assert canvas._ax.get_yscale() == "log"

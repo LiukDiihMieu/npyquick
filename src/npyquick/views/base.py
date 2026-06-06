@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import numpy as np
 from PySide6.QtWidgets import QWidget
+
+if TYPE_CHECKING:
+    from ..core.stats import ArrayStats
 
 
 class SpatialView:
@@ -34,5 +39,5 @@ class BaseView(QWidget):
     def can_handle(cls, array: np.ndarray) -> bool:
         raise NotImplementedError
 
-    def set_data(self, array: np.ndarray) -> None:
+    def set_data(self, array: np.ndarray, stats: ArrayStats | None = None) -> None:
         raise NotImplementedError

@@ -29,17 +29,17 @@ def compute_profile(
     ys = np.clip(np.linspace(p0[1], p1[1], n), 0, h - 1)
     dists = np.linspace(0.0, float(np.hypot(*diff)), n)
 
+    # output=float makes map_coordinates interpolate integer inputs correctly
+    # (otherwise an integer output dtype truncates each sample) without first
+    # materializing a full float copy — the caller may pass a native-dtype
+    # display array. order=1 needs no spline prefilter.
     if array.ndim == 3:
         n_ch = min(array.shape[2], 3)
         values = np.stack([
-            ndimage.map_coordinates(
-                np.asarray(array[:, :, c], dtype=float), [ys, xs], order=1
-            )
+            ndimage.map_coordinates(array[:, :, c], [ys, xs], order=1, output=float)
             for c in range(n_ch)
         ])
     else:
-        values = ndimage.map_coordinates(
-            np.asarray(array, dtype=float), [ys, xs], order=1
-        )
+        values = ndimage.map_coordinates(array, [ys, xs], order=1, output=float)
 
     return dists, values

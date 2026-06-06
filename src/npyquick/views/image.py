@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
 from ..core import limits
 from ..core.coord import PixelTransform
 from ..core.profile import compute_profile
-from ..core.stats import array_stats, is_real_numeric
+from ..core.stats import ArrayStats, array_stats, is_real_numeric
 from .base import BaseView, ColormappedView, SpatialView
 
 
@@ -135,7 +135,10 @@ class ImageCanvas(FigureCanvas):
                 display, origin="upper", interpolation="nearest", extent=extent,
             )
         else:
-            self._disp = np.asarray(sub, dtype=float)
+            # Keep the native dtype: imshow normalizes through clim, so a float64
+            # copy here would only cost 2-8x memory for nothing. Profile sampling
+            # reads this array with output=float to stay correct on integer data.
+            self._disp = np.asarray(sub)
             self._im = self._ax.imshow(
                 self._disp, cmap=self._colormap,
                 origin="upper", interpolation="nearest", extent=extent,
@@ -159,7 +162,15 @@ class ImageCanvas(FigureCanvas):
 
     @staticmethod
     def _prepare_rgb(data: np.ndarray) -> tuple[np.ndarray, str]:
-        d = data[:, :, :3].astype(float)
+        rgb = data[:, :, :3]
+        if rgb.dtype == np.uint8:
+            # imshow renders uint8 RGB in [0, 255] directly, so skip the float
+            # copy entirely (the common case). Profile sampling then reports raw
+            # 0-255 channel values, which is the natural scale for 8-bit color.
+            return np.asarray(rgb), "uint8 [0, 255] — as-is"
+        # Other dtypes need normalization for imshow; float32 halves the copy
+        # cost versus float64 with no visible difference at display precision.
+        d = rgb.astype(np.float32)
         if np.issubdtype(data.dtype, np.integer):
             maxval = np.iinfo(data.dtype).max
             d = d / maxval
@@ -458,7 +469,7 @@ class ImageView(BaseView, SpatialView, ColormappedView):
             return is_real_numeric(array)
         return False
 
-    def set_data(self, array: np.ndarray) -> None:
+    def set_data(self, array: np.ndarray, stats: ArrayStats | None = None) -> None:
         norm_str, downsample_str = self._canvas.load(array)
         if downsample_str is not None:
             self._downsample_label.setText(downsample_str)
@@ -477,7 +488,8 @@ class ImageView(BaseView, SpatialView, ColormappedView):
         else:
             self._norm_label.setText("")
             self._norm_label.setVisible(False)
-        stats = array_stats(array)
+        if stats is None:
+            stats = array_stats(array)
         if stats is not None and stats.has_anomaly:
             self._anomaly_label.setText(stats.anomaly_str())
             self._anomaly_label.setVisible(True)

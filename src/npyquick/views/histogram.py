@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..core import limits
-from ..core.stats import array_stats, is_real_numeric
+from ..core.stats import ArrayStats, array_stats, is_real_numeric
 from .base import BaseView
 
 _BIN_OPTIONS = ["auto", "64", "128", "256", "512"]
@@ -70,7 +70,10 @@ class HistogramCanvas(FigureCanvas):
         self._array = array
         finite, self._n_total, self._n_used = finite_sample(array)
         self._finite = finite
+        self._render()
 
+    def _render(self) -> None:
+        """Redraw bars from the cached _finite sample (no re-sampling)."""
         self._ax.cla()
         self._ax.set_xlabel("Value")
         self._ax.set_ylabel("Count")
@@ -82,7 +85,7 @@ class HistogramCanvas(FigureCanvas):
         self._vtext_hi = None
         finite = self._finite
 
-        if finite.size == 0:
+        if finite is None or finite.size == 0:
             self._ax.text(
                 0.5, 0.5, "No finite values",
                 transform=self._ax.transAxes, ha="center", va="center",
@@ -98,35 +101,39 @@ class HistogramCanvas(FigureCanvas):
                 color="steelblue", edgecolor="none",
             )
             if self._clim is not None:
-                vmin, vmax = self._clim
-                self._vline_lo = self._ax.axvline(
-                    vmin, color="tomato", lw=1.5, ls="--", alpha=0.85, zorder=5
-                )
-                self._vline_hi = self._ax.axvline(
-                    vmax, color="tomato", lw=1.5, ls="--", alpha=0.85, zorder=5
-                )
-                tr = self._ax.get_xaxis_transform()
-                self._vtext_lo = self._ax.text(
-                    vmin, 0.98, "vmin", transform=tr,
-                    ha="center", va="top", color="tomato", fontsize=7,
-                )
-                self._vtext_hi = self._ax.text(
-                    vmax, 0.98, "vmax", transform=tr,
-                    ha="center", va="top", color="tomato", fontsize=7,
-                )
+                self._draw_clim_markers(*self._clim)
 
         self._ax.set_yscale("log" if self._log else "linear")
         self.draw_idle()
 
+    def _draw_clim_markers(self, vmin: float, vmax: float) -> None:
+        self._vline_lo = self._ax.axvline(
+            vmin, color="tomato", lw=1.5, ls="--", alpha=0.85, zorder=5
+        )
+        self._vline_hi = self._ax.axvline(
+            vmax, color="tomato", lw=1.5, ls="--", alpha=0.85, zorder=5
+        )
+        tr = self._ax.get_xaxis_transform()
+        self._vtext_lo = self._ax.text(
+            vmin, 0.98, "vmin", transform=tr,
+            ha="center", va="top", color="tomato", fontsize=7,
+        )
+        self._vtext_hi = self._ax.text(
+            vmax, 0.98, "vmax", transform=tr,
+            ha="center", va="top", color="tomato", fontsize=7,
+        )
+
     def set_bins(self, n: int | str) -> None:
         self._n_bins = n
         if self._array is not None:
-            self.plot(self._array)
+            self._render()  # re-bin the cached sample; no re-sampling
 
     def set_log_scale(self, enable: bool) -> None:
         self._log = enable
         if self._array is not None:
-            self.plot(self._array)
+            # Only the y-axis scale changes — no need to re-sample or re-bin.
+            self._ax.set_yscale("log" if enable else "linear")
+            self.draw_idle()
 
     def set_clim_marker(self, vmin: float | None, vmax: float | None) -> None:
         """Store clim without redrawing — called before plot()."""
@@ -141,22 +148,7 @@ class HistogramCanvas(FigureCanvas):
         self._vline_lo = self._vline_hi = None
         self._vtext_lo = self._vtext_hi = None
         if self._clim is not None and self._edges is not None:
-            vmin, vmax = self._clim
-            self._vline_lo = self._ax.axvline(
-                vmin, color="tomato", lw=1.5, ls="--", alpha=0.85, zorder=5
-            )
-            self._vline_hi = self._ax.axvline(
-                vmax, color="tomato", lw=1.5, ls="--", alpha=0.85, zorder=5
-            )
-            tr = self._ax.get_xaxis_transform()
-            self._vtext_lo = self._ax.text(
-                vmin, 0.98, "vmin", transform=tr,
-                ha="center", va="top", color="tomato", fontsize=7,
-            )
-            self._vtext_hi = self._ax.text(
-                vmax, 0.98, "vmax", transform=tr,
-                ha="center", va="top", color="tomato", fontsize=7,
-            )
+            self._draw_clim_markers(*self._clim)
         self.draw_idle()
 
     def _on_motion(self, ev) -> None:
@@ -260,7 +252,7 @@ class HistogramView(BaseView):
     def can_handle(cls, array: np.ndarray) -> bool:
         return is_real_numeric(array) and array.size > 0
 
-    def set_data(self, array: np.ndarray) -> None:
+    def set_data(self, array: np.ndarray, stats: ArrayStats | None = None) -> None:
         self._canvas.set_clim_marker(None, None)  # reset; app.py syncs from ImageView
         self._canvas.plot(array)  # samples once; stores _finite / _n_total / _n_used
 
@@ -293,7 +285,8 @@ class HistogramView(BaseView):
         if sampled:
             self._status += "  (sampled)"
 
-        stats = array_stats(array)
+        if stats is None:
+            stats = array_stats(array)
         if stats is not None and stats.has_anomaly:
             self._anomaly_label.setText(stats.anomaly_str())
             self._anomaly_label.setVisible(True)

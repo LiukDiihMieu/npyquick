@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..core import limits
-from ..core.stats import array_stats, is_real_numeric
+from ..core.stats import ArrayStats, array_stats, is_real_numeric
 from .base import BaseView
 
 
@@ -307,7 +307,9 @@ class LineplotView(BaseView):
             return array.shape[0] > 2   # (N, 2) column-based x-y
         return False
 
-    def set_data(self, array: np.ndarray) -> None:
+    def set_data(self, array: np.ndarray, stats: ArrayStats | None = None) -> None:
+        # Intentionally ignore full-array stats from app.py.
+        # Line plot displays y-only stats, so it recomputes stats on y values.
         self._canvas.load(array)
 
         n_total = self._canvas._data.shape[0] if self._canvas._col_xy else self._canvas._data.shape[-1]
