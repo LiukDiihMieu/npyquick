@@ -86,3 +86,38 @@ def test_export_menu_rebuilds_when_array_type_changes(main_window, write_npy):
     main_window.load_file(write_npy(img, name="img2.npy"))
     main_window._rebuild_export_menu()
     assert any(a.menu() is not None for a in main_window._export_actions)
+
+
+# ---------------------------------------------------------------------------
+# Reload action — enabled state and success/failure status messages.
+# ---------------------------------------------------------------------------
+
+def test_reload_action_disabled_before_first_load(main_window):
+    assert main_window._reload_action.isEnabled() is False
+
+
+def test_reload_action_enabled_after_load(main_window, write_npy):
+    main_window.load_file(write_npy(np.arange(10, dtype=np.float32)))
+    assert main_window._reload_action.isEnabled() is True
+
+
+def test_reload_success_shows_reloaded_message(main_window, write_npy):
+    path = write_npy(np.arange(10, dtype=np.float32))
+    main_window.load_file(path)
+    main_window._reload_file()
+    assert main_window._sb.currentMessage() == "File reloaded"
+
+
+def test_reload_failure_preserves_error_message(main_window, write_npy, tmp_path):
+    """A failed reload must not overwrite the error with 'File reloaded'."""
+    main_window.load_file(write_npy(np.arange(10, dtype=np.float32)))
+
+    # Overwrite the file on disk with garbage so the next load fails.
+    bad = tmp_path / "gone.npy"
+    bad.write_bytes(b"corrupted")
+    main_window._current_path = str(bad)
+
+    main_window._reload_file()
+
+    assert "Error" in main_window._sb.currentMessage()
+    assert "reloaded" not in main_window._sb.currentMessage()

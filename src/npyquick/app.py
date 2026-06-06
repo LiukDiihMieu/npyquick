@@ -246,12 +246,12 @@ class MainWindow(QMainWindow):
         if path:
             self.load_file(path)
 
-    def load_file(self, path: str) -> None:
+    def load_file(self, path: str) -> bool:
         try:
             self._model.load(path)
         except Exception as exc:
             self._sb.showMessage(f"Error loading {path}: {exc}")
-            return
+            return False
 
         self._current_path = path
         self._reload_action.setEnabled(True)
@@ -286,6 +286,7 @@ class MainWindow(QMainWindow):
             # .npy: single array, no picker needed.
             self._array_bar.setVisible(False)
             self._refresh_views()
+        return True
 
     def _refresh_views(self) -> None:
         array = self._model.array
@@ -322,8 +323,7 @@ class MainWindow(QMainWindow):
         self._refresh_views()
 
     def _reload_file(self) -> None:
-        if self._current_path:
-            self.load_file(self._current_path)
+        if self._current_path and self.load_file(self._current_path):
             self._sb.showMessage("File reloaded", 3000)
 
     def _next_tab(self) -> None:
