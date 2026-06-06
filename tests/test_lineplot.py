@@ -122,14 +122,25 @@ def test_set_log_x():
 # ---------------------------------------------------------------------------
 
 def test_reset_zoom_no_data():
+    # Without data the axes are still in their default state; reset_zoom must
+    # be a safe no-op that leaves the limits untouched.
     v = _view()
-    v._canvas.reset_zoom()           # must not crash
+    before = v._canvas._ax.get_xlim(), v._canvas._ax.get_ylim()
+    v._canvas.reset_zoom()
+    assert (v._canvas._ax.get_xlim(), v._canvas._ax.get_ylim()) == before
 
 
-def test_reset_zoom_with_data():
+def test_reset_zoom_restores_autoscale_view_after_user_zoom():
     v = _view()
     v.set_data(np.arange(50, dtype=np.float32))
-    v._canvas.reset_zoom()           # must not crash
+    expected_x = v._canvas._ax.get_xlim()
+    expected_y = v._canvas._ax.get_ylim()
+    # Simulate a user-driven zoom.
+    v._canvas._ax.set_xlim(5, 10)
+    v._canvas._ax.set_ylim(0, 1)
+    v._canvas.reset_zoom()
+    np.testing.assert_allclose(v._canvas._ax.get_xlim(), expected_x)
+    np.testing.assert_allclose(v._canvas._ax.get_ylim(), expected_y)
 
 
 # ---------------------------------------------------------------------------
