@@ -1,9 +1,11 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 from __future__ import annotations
 
 import numpy as np
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QSettings
 from PySide6.QtWidgets import (
     QHBoxLayout, QLabel, QLineEdit, QPushButton, QSplitter, QVBoxLayout, QWidget,
 )
@@ -11,11 +13,13 @@ from PySide6.QtWidgets import (
 from ..core import limits
 from ..core.coord import PixelTransform
 from ..core.profile import compute_profile
-from ..core.stats import array_stats, is_real_numeric
-from .base import BaseView, ColormappedView, SpatialView
+from ..core.stats import ArrayStats, array_stats, is_real_numeric
+from .base import BaseView, ColormappedView, ExportableMixin, SpatialView
 
 
-class ProfileCanvas(FigureCanvas):
+class ProfileCanvas(ExportableMixin, FigureCanvas):
+    panel_name = "Profile"
+
     def __init__(self) -> None:
         fig = Figure(constrained_layout=True)
         self._ax = fig.add_subplot(111)
@@ -73,11 +77,12 @@ class ProfileCanvas(FigureCanvas):
         self.draw_idle()
 
 
-class ImageCanvas(FigureCanvas):
+class ImageCanvas(ExportableMixin, FigureCanvas):
     _HIT_RADIUS = 12
+    panel_name = "Image"
 
     def __init__(self, profile: ProfileCanvas) -> None:
-        self._fig = Figure(constrained_layout=True)
+        self._fig = Figure(layout="compressed")
         super().__init__(self._fig)
         self._ax = self._fig.add_subplot(111)
         self._profile = profile
@@ -135,7 +140,10 @@ class ImageCanvas(FigureCanvas):
                 display, origin="upper", interpolation="nearest", extent=extent,
             )
         else:
-            self._disp = np.asarray(sub, dtype=float)
+            # Keep the native dtype: imshow normalizes through clim, so a float64
+            # copy here would only cost 2-8x memory for nothing. Profile sampling
+            # reads this array with output=float to stay correct on integer data.
+            self._disp = np.asarray(sub)
             self._im = self._ax.imshow(
                 self._disp, cmap=self._colormap,
                 origin="upper", interpolation="nearest", extent=extent,
@@ -159,7 +167,15 @@ class ImageCanvas(FigureCanvas):
 
     @staticmethod
     def _prepare_rgb(data: np.ndarray) -> tuple[np.ndarray, str]:
-        d = data[:, :, :3].astype(float)
+        rgb = data[:, :, :3]
+        if rgb.dtype == np.uint8:
+            # imshow renders uint8 RGB in [0, 255] directly, so skip the float
+            # copy entirely (the common case). Profile sampling then reports raw
+            # 0-255 channel values, which is the natural scale for 8-bit color.
+            return np.asarray(rgb), "uint8 [0, 255] — as-is"
+        # Other dtypes need normalization for imshow; float32 halves the copy
+        # cost versus float64 with no visible difference at display precision.
+        d = rgb.astype(np.float32)
         if np.issubdtype(data.dtype, np.integer):
             maxval = np.iinfo(data.dtype).max
             d = d / maxval
@@ -402,12 +418,16 @@ class ImageView(BaseView, SpatialView, ColormappedView):
         sp = QSplitter(Qt.Horizontal)
         sp.addWidget(self._canvas)
         sp.addWidget(self._profile)
-        sp.setSizes([780, 480])
+        _saved = QSettings("npyquick", "npyquick").value("image_profile_splitter")
+        sp.setSizes([int(x) for x in _saved] if _saved else [780, 480])
+        sp.splitterMoved.connect(
+            lambda pos, idx: QSettings("npyquick", "npyquick").setValue(
+                "image_profile_splitter", sp.sizes()
+            )
+        )
 
         self._vmin_edit = QLineEdit()
         self._vmax_edit = QLineEdit()
-        self._vmin_edit.setPlaceholderText("vmin")
-        self._vmax_edit.setPlaceholderText("vmax")
         self._vmin_edit.setFixedWidth(90)
         self._vmax_edit.setFixedWidth(90)
         self._apply_btn = QPushButton("Apply")
@@ -430,7 +450,7 @@ class ImageView(BaseView, SpatialView, ColormappedView):
 
         ctrl = QWidget()
         ctrl_layout = QHBoxLayout(ctrl)
-        ctrl_layout.setContentsMargins(6, 2, 6, 2)
+        ctrl_layout.setContentsMargins(6, 3, 6, 3)
         ctrl_layout.addWidget(QLabel("vmin:"))
         ctrl_layout.addWidget(self._vmin_edit)
         ctrl_layout.addWidget(QLabel("vmax:"))
@@ -458,7 +478,7 @@ class ImageView(BaseView, SpatialView, ColormappedView):
             return is_real_numeric(array)
         return False
 
-    def set_data(self, array: np.ndarray) -> None:
+    def set_data(self, array: np.ndarray, stats: ArrayStats | None = None) -> None:
         norm_str, downsample_str = self._canvas.load(array)
         if downsample_str is not None:
             self._downsample_label.setText(downsample_str)
@@ -477,7 +497,8 @@ class ImageView(BaseView, SpatialView, ColormappedView):
         else:
             self._norm_label.setText("")
             self._norm_label.setVisible(False)
-        stats = array_stats(array)
+        if stats is None:
+            stats = array_stats(array)
         if stats is not None and stats.has_anomaly:
             self._anomaly_label.setText(stats.anomaly_str())
             self._anomaly_label.setVisible(True)
@@ -497,6 +518,10 @@ class ImageView(BaseView, SpatialView, ColormappedView):
 
     def refresh_status(self) -> None:
         self._on_status(self._canvas.status_str())
+
+    def export_targets(self):
+        return [("Image", self._canvas._export_figure),
+                ("Profile", self._profile._export_figure)]
 
     def set_on_clim_change(self, cb: callable) -> None:
         self._on_clim_change = cb

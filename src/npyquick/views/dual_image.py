@@ -15,14 +15,16 @@ from ..core.coord import PixelTransform
 from ..core.profile import compute_profile
 from ..core.stats import array_stats
 from ..model import NpyDataModel
-from .base import BaseView, ColormappedView, SpatialView
+from .base import BaseView, ColormappedView, ExportableMixin, SpatialView
 
 
 def _fmt_unit(unit: str) -> str:
     return "" if unit == "None" else unit
 
 
-class DualProfileCanvas(FigureCanvas):
+class DualProfileCanvas(ExportableMixin, FigureCanvas):
+    panel_name = "Profile"
+
     def __init__(self) -> None:
         fig = Figure(constrained_layout=True)
         self._ax = fig.add_subplot(111)
@@ -76,7 +78,7 @@ class DualProfileCanvas(FigureCanvas):
         self.draw_idle()
 
 
-class DualImageCanvas(FigureCanvas):
+class DualImageCanvas(ExportableMixin, FigureCanvas):
     _HIT_RADIUS = 12
 
     def __init__(
@@ -92,6 +94,7 @@ class DualImageCanvas(FigureCanvas):
         super().__init__(self._fig)
         self._ax = self._fig.add_subplot(111)
         self._label = label
+        self.panel_name = label
         self._on_status = on_status
         self._on_endpoints_changed = on_endpoints_changed
         self._on_drop = on_drop
@@ -754,7 +757,7 @@ class DualImageView(BaseView, SpatialView, ColormappedView):
     def can_handle(cls, array: np.ndarray) -> bool:
         return True
 
-    def set_data(self, array: np.ndarray) -> None:
+    def set_data(self, array: np.ndarray, stats=None) -> None:
         if array.ndim != 2 or not np.issubdtype(array.dtype, np.number):
             return
         self._img1 = array
@@ -773,6 +776,16 @@ class DualImageView(BaseView, SpatialView, ColormappedView):
 
     def refresh_status(self) -> None:
         self._on_status("Compare — drag or open two 2D arrays of the same shape")
+
+    def export_targets(self):
+        targets = [
+            ("Img 1", self._canvas1._export_figure),
+            ("Img 2", self._canvas2._export_figure),
+        ]
+        if self._diff_mode:
+            targets.append(("Diff", self._diff_canvas._export_figure))
+        targets.append(("Profile", self._profile._export_figure))
+        return targets
 
     def set_colormap(self, name: str) -> None:
         self._colormap = name

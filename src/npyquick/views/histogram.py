@@ -1,16 +1,18 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 from __future__ import annotations
 
 import numpy as np
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QSettings
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget,
 )
 
 from ..core import limits
-from ..core.stats import array_stats, is_real_numeric
-from .base import BaseView
+from ..core.stats import ArrayStats, array_stats, is_real_numeric
+from .base import BaseView, ExportableMixin
 
 _BIN_OPTIONS = ["auto", "64", "128", "256", "512"]
 
@@ -35,7 +37,8 @@ def finite_sample(array: np.ndarray) -> tuple[np.ndarray, int, int]:
     return finite, n_total, n_used
 
 
-class HistogramCanvas(FigureCanvas):
+class HistogramCanvas(ExportableMixin, FigureCanvas):
+    panel_name = "Histogram"
     def __init__(self) -> None:
         self._fig = Figure(constrained_layout=True)
         super().__init__(self._fig)
@@ -56,6 +59,7 @@ class HistogramCanvas(FigureCanvas):
         self._vtext_lo = None
         self._vtext_hi = None
 
+        self.mpl_connect("button_press_event", self._on_press)
         self.mpl_connect("motion_notify_event", self._on_motion)
         self.mpl_connect("axes_leave_event", self._on_axes_leave)
         self.mpl_connect("scroll_event", self._on_scroll)
@@ -70,7 +74,10 @@ class HistogramCanvas(FigureCanvas):
         self._array = array
         finite, self._n_total, self._n_used = finite_sample(array)
         self._finite = finite
+        self._render()
 
+    def _render(self) -> None:
+        """Redraw bars from the cached _finite sample (no re-sampling)."""
         self._ax.cla()
         self._ax.set_xlabel("Value")
         self._ax.set_ylabel("Count")
@@ -82,7 +89,7 @@ class HistogramCanvas(FigureCanvas):
         self._vtext_hi = None
         finite = self._finite
 
-        if finite.size == 0:
+        if finite is None or finite.size == 0:
             self._ax.text(
                 0.5, 0.5, "No finite values",
                 transform=self._ax.transAxes, ha="center", va="center",
@@ -98,35 +105,41 @@ class HistogramCanvas(FigureCanvas):
                 color="steelblue", edgecolor="none",
             )
             if self._clim is not None:
-                vmin, vmax = self._clim
-                self._vline_lo = self._ax.axvline(
-                    vmin, color="tomato", lw=1.5, ls="--", alpha=0.85, zorder=5
-                )
-                self._vline_hi = self._ax.axvline(
-                    vmax, color="tomato", lw=1.5, ls="--", alpha=0.85, zorder=5
-                )
-                tr = self._ax.get_xaxis_transform()
-                self._vtext_lo = self._ax.text(
-                    vmin, 0.98, "vmin", transform=tr,
-                    ha="center", va="top", color="tomato", fontsize=7,
-                )
-                self._vtext_hi = self._ax.text(
-                    vmax, 0.98, "vmax", transform=tr,
-                    ha="center", va="top", color="tomato", fontsize=7,
-                )
+                self._draw_clim_markers(*self._clim)
 
         self._ax.set_yscale("log" if self._log else "linear")
         self.draw_idle()
 
+    def _draw_clim_markers(self, vmin: float, vmax: float) -> None:
+        self._vline_lo = self._ax.axvline(
+            vmin, color="tomato", lw=1.5, ls="--", alpha=0.85, zorder=5
+        )
+        self._vline_hi = self._ax.axvline(
+            vmax, color="tomato", lw=1.5, ls="--", alpha=0.85, zorder=5
+        )
+        tr = self._ax.get_xaxis_transform()
+        self._vtext_lo = self._ax.text(
+            vmin, 0.98, "vmin", transform=tr,
+            ha="center", va="top", color="tomato", fontsize=7, clip_on=True,
+        )
+        self._vtext_lo.set_in_layout(False)
+        self._vtext_hi = self._ax.text(
+            vmax, 0.98, "vmax", transform=tr,
+            ha="center", va="top", color="tomato", fontsize=7, clip_on=True,
+        )
+        self._vtext_hi.set_in_layout(False)
+
     def set_bins(self, n: int | str) -> None:
         self._n_bins = n
         if self._array is not None:
-            self.plot(self._array)
+            self._render()  # re-bin the cached sample; no re-sampling
 
     def set_log_scale(self, enable: bool) -> None:
         self._log = enable
         if self._array is not None:
-            self.plot(self._array)
+            # Only the y-axis scale changes — no need to re-sample or re-bin.
+            self._ax.set_yscale("log" if enable else "linear")
+            self.draw_idle()
 
     def set_clim_marker(self, vmin: float | None, vmax: float | None) -> None:
         """Store clim without redrawing — called before plot()."""
@@ -141,23 +154,12 @@ class HistogramCanvas(FigureCanvas):
         self._vline_lo = self._vline_hi = None
         self._vtext_lo = self._vtext_hi = None
         if self._clim is not None and self._edges is not None:
-            vmin, vmax = self._clim
-            self._vline_lo = self._ax.axvline(
-                vmin, color="tomato", lw=1.5, ls="--", alpha=0.85, zorder=5
-            )
-            self._vline_hi = self._ax.axvline(
-                vmax, color="tomato", lw=1.5, ls="--", alpha=0.85, zorder=5
-            )
-            tr = self._ax.get_xaxis_transform()
-            self._vtext_lo = self._ax.text(
-                vmin, 0.98, "vmin", transform=tr,
-                ha="center", va="top", color="tomato", fontsize=7,
-            )
-            self._vtext_hi = self._ax.text(
-                vmax, 0.98, "vmax", transform=tr,
-                ha="center", va="top", color="tomato", fontsize=7,
-            )
+            self._draw_clim_markers(*self._clim)
         self.draw_idle()
+
+    def _on_press(self, ev) -> None:
+        if ev.dblclick and ev.inaxes is self._ax:
+            self.xlim_full()
 
     def _on_motion(self, ev) -> None:
         if ev.inaxes is not self._ax or self._edges is None or ev.xdata is None:
@@ -204,13 +206,23 @@ class HistogramView(BaseView):
         self._status: str = ""
         self._canvas = HistogramCanvas()
 
+        _s = QSettings("npyquick", "npyquick")
+
         self._bins_combo = QComboBox()
         self._bins_combo.addItems(_BIN_OPTIONS)
         self._bins_combo.setFixedWidth(80)
         self._bins_combo.currentTextChanged.connect(self._on_bins_changed)
+        _saved_bins = _s.value("histogram_bins", "auto")
+        if _saved_bins in _BIN_OPTIONS:
+            self._bins_combo.setCurrentText(_saved_bins)
 
         self._log_check = QCheckBox("Log scale")
         self._log_check.toggled.connect(self._canvas.set_log_scale)
+        self._log_check.toggled.connect(
+            lambda checked: QSettings("npyquick", "npyquick").setValue("histogram_log", checked)
+        )
+        if _s.value("histogram_log", False, type=bool):
+            self._log_check.setChecked(True)
 
         self._full_btn = QPushButton("Full")
         self._full_btn.setFixedWidth(48)
@@ -260,7 +272,7 @@ class HistogramView(BaseView):
     def can_handle(cls, array: np.ndarray) -> bool:
         return is_real_numeric(array) and array.size > 0
 
-    def set_data(self, array: np.ndarray) -> None:
+    def set_data(self, array: np.ndarray, stats: ArrayStats | None = None) -> None:
         self._canvas.set_clim_marker(None, None)  # reset; app.py syncs from ImageView
         self._canvas.plot(array)  # samples once; stores _finite / _n_total / _n_used
 
@@ -293,7 +305,8 @@ class HistogramView(BaseView):
         if sampled:
             self._status += "  (sampled)"
 
-        stats = array_stats(array)
+        if stats is None:
+            stats = array_stats(array)
         if stats is not None and stats.has_anomaly:
             self._anomaly_label.setText(stats.anomaly_str())
             self._anomaly_label.setVisible(True)
@@ -308,9 +321,13 @@ class HistogramView(BaseView):
     def refresh_status(self) -> None:
         self._on_status(self._status)
 
+    def export_targets(self):
+        return [("Histogram", self._canvas._export_figure)]
+
     def set_on_status(self, cb: callable) -> None:
         super().set_on_status(cb)
         self._canvas.set_on_status(cb)
 
     def _on_bins_changed(self, text: str) -> None:
+        QSettings("npyquick", "npyquick").setValue("histogram_bins", text)
         self._canvas.set_bins(text if text == "auto" else int(text))

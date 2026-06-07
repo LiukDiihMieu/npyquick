@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 from __future__ import annotations
 
 from math import ceil
@@ -18,6 +20,7 @@ NPZ_MEMBER_CEILING = 2 * 1024**3     # 2 GiB
 # and are summarized at full resolution; only genuinely huge arrays downsample.
 IMAGE_MAX_PIXELS = 16_777_216        # 4096 * 4096 spatial pixels (channels excluded)
 HIST_MAX_SAMPLES = 16_777_216        # 4096 * 4096 flattened samples
+LINEPLOT_MAX_POINTS = 1_000_000      # max display points for interactive line plot
 TABLE_MAX_PER_AXIS = 2_000
 
 

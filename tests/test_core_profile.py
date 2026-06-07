@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from npyquick.core.profile import compute_profile
 
@@ -32,11 +33,15 @@ def test_2d_diagonal_length():
     np.testing.assert_allclose(dists[-1], np.hypot(9.0, 9.0))
 
 
-def test_3d_rgb_returns_per_channel():
-    arr = np.zeros((10, 10, 3), dtype=float)
-    arr[..., 0] = 1.0   # red plane = 1
-    arr[..., 1] = 2.0   # green plane = 2
-    arr[..., 2] = 3.0   # blue plane = 3
+@pytest.mark.parametrize("n_channels", [3, 4])
+def test_3d_returns_first_three_channels(n_channels):
+    """RGB (n=3) is sampled fully; RGBA (n=4) drops the alpha channel."""
+    arr = np.zeros((10, 10, n_channels), dtype=float)
+    arr[..., 0] = 1.0
+    arr[..., 1] = 2.0
+    arr[..., 2] = 3.0
+    if n_channels == 4:
+        arr[..., 3] = 99.0   # alpha — must NOT appear in the profile output
     p0 = np.array([0.0, 5.0])
     p1 = np.array([9.0, 5.0])
     _, values = compute_profile(arr, p0, p1)
@@ -44,6 +49,7 @@ def test_3d_rgb_returns_per_channel():
     np.testing.assert_allclose(values[0], 1.0)
     np.testing.assert_allclose(values[1], 2.0)
     np.testing.assert_allclose(values[2], 3.0)
+    assert (values != 99.0).all()
 
 
 def test_zero_length_line_returns_at_least_two_points():
@@ -66,14 +72,3 @@ def test_endpoints_outside_bounds_are_clipped():
     np.testing.assert_allclose(values[-1], arr[5, -1])
 
 
-def test_rgba_uses_first_three_channels():
-    arr = np.zeros((10, 10, 4), dtype=float)
-    arr[..., 0] = 1.0
-    arr[..., 1] = 2.0
-    arr[..., 2] = 3.0
-    arr[..., 3] = 99.0   # alpha — must NOT appear
-    p0 = np.array([0.0, 5.0])
-    p1 = np.array([9.0, 5.0])
-    _, values = compute_profile(arr, p0, p1)
-    assert values.shape[0] == 3
-    assert (values != 99.0).all()

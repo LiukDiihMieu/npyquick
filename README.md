@@ -1,4 +1,10 @@
-# npyquick
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo-horizontal-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="docs/assets/logo-horizontal-light.svg">
+    <img alt="npyquick logo" src="docs/assets/logo-horizontal-light.svg" width="400">
+  </picture>
+</p>
 
 A fast, lightweight GUI viewer for NumPy arrays (`.npy` / `.npz`), built with PySide6 and Matplotlib.
 
@@ -36,7 +42,7 @@ Displays 2D and RGB arrays as an interactive image.
 - 2D numeric arrays — any dtype (float32/64, uint8/16, int16/32, …)
 - `(H, W, 3)` RGB arrays — uint8, uint16, and float32/64
 
-**Normalization (RGB only):** integer types are scaled by their dtype maximum (e.g. uint16 ÷ 65535); float arrays outside [0, 1] are globally min-max stretched. The applied strategy is shown in the control bar.
+**Normalization (RGB only):** uint8 is displayed directly in [0, 255] with no scaling; other integer types are scaled by their dtype maximum (e.g. uint16 ÷ 65535); float arrays outside [0, 1] are globally min-max stretched. The applied strategy is shown in the control bar.
 
 **Interactions:**
 - Scroll to zoom, left-drag to pan, double-click to reset zoom
@@ -57,6 +63,27 @@ Shows the value distribution of any real numeric array (1D, 2D, RGB, or higher-d
 **Interactions:**
 - Hover over a bar to read its `[lo, hi)` range and count in the status bar
 - When a 2D image is loaded, the image's current vmin / vmax appear as labelled dashed markers, kept in sync with the Image view's brightness range
+
+### Line Plot view
+Displays 1D signals and paired (x, y) datasets as an interactive line plot.
+
+**Supported formats:**
+- `(N,)` real numeric arrays — x axis is the element index
+- `(2, N)` real numeric arrays with N > 2 — row 0 as x values, row 1 as y values
+- `(N, 2)` real numeric arrays with N > 2 — column 0 as x values, column 1 as y values
+
+For `(2, N)` and `(N, 2)` arrays the x axis uses the raw values stored in the data; physical units and spacing are the user's responsibility.
+
+**Interactions:**
+- Scroll to zoom x axis, **Shift + scroll** to zoom y axis, both centred on the cursor
+- Left-drag to pan both axes freely
+- Double-click to reset zoom (restores matplotlib's default 5 % margin on both axes)
+
+**Controls:**
+- **Log X / Log Y** checkboxes — switches each axis to logarithmic scale; automatically disabled when the data has no positive values
+- **Reset** button — resets zoom to show all data
+
+Large arrays are downsampled for display (budget: 1 M points); the original data is always used for hover readout (status bar shows index or x value, and y value).
 
 ### Table view
 Fallback for any array shape or dtype that the image view cannot display (1D, >2D, non-numeric, empty, scalar, complex). Rows and columns are capped at 10 000 to keep large arrays usable.
@@ -153,9 +180,11 @@ restarting the file manager or logging out and back in before the menu updates.
 ## TODO
 
 - [ ] `>2D` array slicer
-- [ ] 1D / time-series view
 - [ ] Complex array support (real / imaginary / magnitude / phase)
-- [ ] Image view: drop the redundant float64 conversion in `ImageCanvas` — let
-      matplotlib display `uint8`/`int16`/`uint16`/`float32` grayscale and `uint8`
-      RGB natively (avoids a 2–8× memory blow-up); confine `astype(float)` to the
-      profile sampler that actually needs it
+
+## License
+
+Copyright 2026 LiukDiihMieu
+
+This project is licensed under the **GNU General Public License v3.0 or later**. Project logo and visual assets are included for use with this project.
+See the [LICENSE](LICENSE) file for details.

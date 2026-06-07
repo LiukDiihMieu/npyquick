@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import dataclasses
+
 import numpy as np
 import pytest
 
@@ -67,5 +69,5 @@ def test_equality_is_value_based():
 
 def test_frozen_dataclass_is_immutable():
     t = PixelTransform()
-    with pytest.raises(Exception):
+    with pytest.raises(dataclasses.FrozenInstanceError):
         t.pixel_size = 2.0   # type: ignore[misc]

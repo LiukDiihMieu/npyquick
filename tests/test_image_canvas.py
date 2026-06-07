@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from npyquick.views.image import ImageCanvas, ImageView, ProfileCanvas
 
@@ -70,6 +71,18 @@ def test_can_handle_classmethod():
     assert ImageView.can_handle(np.arange(10)) is False
 
 
+@pytest.mark.parametrize("shape", [
+    (0, 5),       # empty rows, 2D
+    (5, 0),       # empty cols, 2D
+    (0, 0),       # empty 2D
+    (0, 5, 3),    # empty RGB
+])
+def test_can_handle_rejects_empty_arrays(shape):
+    """Guards the `array.size > 0` check in can_handle for both 2D and RGB —
+    a zero-element array would otherwise crash imshow at render time."""
+    assert ImageView.can_handle(np.empty(shape, dtype=float)) is False
+
+
 # ---------------------------------------------------------------------------
 # RGB normalization (_prepare_rgb)
 # ---------------------------------------------------------------------------
@@ -78,11 +91,12 @@ def _make_canvas() -> ImageCanvas:
     return ImageCanvas(ProfileCanvas())
 
 
-def test_prepare_rgb_uint8_divides_by_255():
+def test_prepare_rgb_uint8_passthrough():
     data = np.full((4, 4, 3), 128, dtype=np.uint8)
     display, norm_str = ImageCanvas._prepare_rgb(data)
-    np.testing.assert_allclose(display, 128 / 255, atol=1e-6)
-    assert "255" in norm_str
+    assert display.dtype == np.uint8
+    np.testing.assert_array_equal(display, 128)
+    assert "as-is" in norm_str
 
 
 def test_prepare_rgb_uint16_divides_by_65535():
