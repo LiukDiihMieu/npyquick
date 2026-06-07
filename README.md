@@ -1,4 +1,10 @@
-# npyquick
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo-horizontal-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="docs/assets/logo-horizontal-light.svg">
+    <img alt="npyquick logo" src="docs/assets/logo-horizontal-light.svg" width="400">
+  </picture>
+</p>
 
 A fast, lightweight GUI viewer for NumPy arrays (`.npy` / `.npz`), built with PySide6 and Matplotlib.
 
@@ -180,5 +186,5 @@ restarting the file manager or logging out and back in before the menu updates.
 
 Copyright 2026 LiukDiihMieu
 
-This project is licensed under the **GNU General Public License v3.0 or later**.
+This project is licensed under the **GNU General Public License v3.0 or later**. Project logo and visual assets are included for use with this project.
 See the [LICENSE](LICENSE) file for details.
