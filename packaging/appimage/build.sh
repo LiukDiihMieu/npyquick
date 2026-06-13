@@ -51,12 +51,15 @@ echo ">> assembling AppDir"
 APPDIR="$WORK/AppDir"
 mkdir -p "$APPDIR/usr/bin" "$APPDIR/usr/lib" \
          "$APPDIR/usr/share/applications" \
+         "$APPDIR/usr/share/metainfo" \
          "$APPDIR/usr/share/icons/hicolor/256x256/apps" \
          "$APPDIR/usr/share/icons/hicolor/512x512/apps"
 cp -a "$WORK/dist/npyquick/." "$APPDIR/usr/bin/"
 install -m 755 packaging/appimage/AppRun "$APPDIR/AppRun"
 cp packaging/appimage/npyquick.desktop "$APPDIR/npyquick.desktop"
 cp packaging/appimage/npyquick.desktop "$APPDIR/usr/share/applications/npyquick.desktop"
+cp packaging/appimage/io.github.liukdiihmieu.npyquick.appdata.xml \
+   "$APPDIR/usr/share/metainfo/io.github.liukdiihmieu.npyquick.appdata.xml"
 cp packaging/appimage/npyquick.png "$APPDIR/npyquick.png"
 cp packaging/appimage/npyquick.png "$APPDIR/.DirIcon"
 cp packaging/appimage/npyquick.png "$APPDIR/usr/share/icons/hicolor/256x256/apps/npyquick.png"

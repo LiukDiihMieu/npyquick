@@ -21,6 +21,15 @@ npyquick is designed as a small, practical viewer for this job:
 
 ## Installation
 
+**Linux (AppImage):**
+
+On x86-64 Linux, AppImage is available for one-click installation. Download `npyquick-x86_64.AppImage` from the [latest release](https://github.com/LiukDiihMieu/npyquick/releases/latest), then:
+
+```bash
+chmod +x npyquick-x86_64.AppImage
+./npyquick-x86_64.AppImage path/to/file.npy
+```
+
 **With pip:**
 ```bash
 pip install npyquick
@@ -32,7 +41,7 @@ conda env create -f environment.yml
 conda activate npyquick
 ```
 
-Dependencies: Python ≥ 3.10, NumPy, SciPy, Matplotlib, and PySide6.
+The pip and conda installs need Python ≥ 3.10, NumPy, SciPy, Matplotlib, and PySide6.
 
 ## Usage
 
