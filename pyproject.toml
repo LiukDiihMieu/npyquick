@@ -6,11 +6,21 @@ build-backend = "hatchling.build"
 name = "npyquick"
 version = "0.1.0"
 description = "Quick GUI viewer for .npy / .npz arrays with image, table, and cross-section views"
+readme = "README.md"
 requires-python = ">=3.10"
 license = "GPL-3.0-or-later"
 classifiers = [
+    "Development Status :: 4 - Beta",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     "Operating System :: OS Independent",
+    "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+    "Topic :: Scientific/Engineering :: Visualization",
+    "Topic :: Utilities",
+    "Intended Audience :: Science/Research",
+    "Environment :: X11 Applications :: Qt",
 ]
 license-files = ["LICENSE"]
 dependencies = [
