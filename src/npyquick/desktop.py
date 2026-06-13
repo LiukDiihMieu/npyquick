@@ -27,6 +27,14 @@ def _config_home() -> Path:
 
 
 def _resolve_exec() -> str:
+    # Inside an AppImage, $APPIMAGE is the stable absolute path of the .AppImage
+    # file. argv[0]/which() would instead point into the ephemeral per-run mount
+    # (/tmp/.mount_xxxx), which is gone once the app exits, so a baked Exec from
+    # it would break. Prefer $APPIMAGE so file-manager double-click keeps working.
+    appimage = os.environ.get("APPIMAGE")
+    if appimage:
+        return str(Path(appimage).resolve())
+
     # A bare `Exec=npyquick` relies on the file manager's session PATH, which
     # often lacks the conda/venv bin dir, so bake in the absolute path.
     # Prefer the launcher actually invoked (argv[0]) over a PATH lookup of the

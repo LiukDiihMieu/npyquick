@@ -36,6 +36,7 @@ def test_desktop_entry_quotes_path_with_spaces():
 
 def test_resolve_exec_prefers_invoked_launcher_over_path_app(monkeypatch):
     # argv[0] is a specific install; a different npyquick sits on PATH.
+    monkeypatch.delenv("APPIMAGE", raising=False)
     monkeypatch.setattr(desktop.sys, "argv", ["/opt/venv/bin/npyquick", "--install-desktop"])
     monkeypatch.setattr(
         desktop.shutil, "which",
@@ -45,6 +46,7 @@ def test_resolve_exec_prefers_invoked_launcher_over_path_app(monkeypatch):
 
 
 def test_resolve_exec_is_always_absolute(monkeypatch, tmp_path):
+    monkeypatch.delenv("APPIMAGE", raising=False)
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(desktop.sys, "argv", ["./npyquick"])
     monkeypatch.setattr(desktop.shutil, "which", lambda c: c if c == "./npyquick" else None)
@@ -53,10 +55,28 @@ def test_resolve_exec_is_always_absolute(monkeypatch, tmp_path):
 
 
 def test_resolve_exec_raises_when_no_executable(monkeypatch):
+    monkeypatch.delenv("APPIMAGE", raising=False)
     monkeypatch.setattr(desktop.sys, "argv", ["-c"])
     monkeypatch.setattr(desktop.shutil, "which", lambda c: None)
     with pytest.raises(RuntimeError, match="npyquick"):
         desktop._resolve_exec()
+
+
+def test_resolve_exec_prefers_appimage_path(monkeypatch):
+    # Running from an AppImage: $APPIMAGE is the stable .AppImage path and must
+    # win over argv[0], which points into the ephemeral /tmp mount.
+    monkeypatch.setenv("APPIMAGE", "/home/me/Apps/npyquick-x86_64.AppImage")
+    monkeypatch.setattr(desktop.sys, "argv", ["/tmp/.mount_npyqXX/usr/bin/npyquick"])
+    monkeypatch.setattr(desktop.shutil, "which", lambda c: "/tmp/.mount_npyqXX/usr/bin/npyquick")
+    assert desktop._resolve_exec() == "/home/me/Apps/npyquick-x86_64.AppImage"
+
+
+def test_resolve_exec_ignores_appimage_when_unset(monkeypatch):
+    # A plain pip install has no $APPIMAGE; behaviour falls back to argv[0].
+    monkeypatch.delenv("APPIMAGE", raising=False)
+    monkeypatch.setattr(desktop.sys, "argv", ["/opt/venv/bin/npyquick"])
+    monkeypatch.setattr(desktop.shutil, "which", lambda c: c)
+    assert desktop._resolve_exec() == "/opt/venv/bin/npyquick"
 
 
 def test_desktop_entry_declares_both_mime_types():
