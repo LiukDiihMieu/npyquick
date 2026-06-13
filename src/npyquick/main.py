@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from importlib.metadata import version
 
 from PySide6.QtWidgets import QApplication
 
@@ -14,6 +15,9 @@ from npyquick.app import MainWindow
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="npyquick — a fast, lightweight viewer for NumPy arrays (.npy / .npz)"
+    )
+    parser.add_argument(
+        "-v", "--version", action="version", version=f"%(prog)s {version('npyquick')}"
     )
     parser.add_argument(
         "file", nargs="?", help="Path to a .npy or .npz file to open on launch"
