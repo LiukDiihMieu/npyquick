@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import configparser
 import os
 import shutil
 import subprocess
@@ -21,10 +22,27 @@ def _data_home() -> Path:
     return Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share")
 
 
+def _config_home() -> Path:
+    return Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
+
+
 def _resolve_exec() -> str:
     # A bare `Exec=npyquick` relies on the file manager's session PATH, which
     # often lacks the conda/venv bin dir. Bake in the absolute launcher path.
     return shutil.which(APP_ID) or os.path.realpath(sys.argv[0])
+
+
+def _quote_exec(path: str) -> str:
+    # freedesktop Exec quoting: wrap in double quotes (so spaces survive) and
+    # backslash-escape the reserved characters " ` $ \ — otherwise a path like
+    # /home/My Projects/bin/npyquick splits into two arguments.
+    escaped = (
+        path.replace("\\", "\\\\")
+        .replace('"', '\\"')
+        .replace("`", "\\`")
+        .replace("$", "\\$")
+    )
+    return f'"{escaped}"'
 
 
 def _desktop_entry(exec_path: str) -> str:
@@ -33,7 +51,7 @@ Type=Application
 Name=npyquick
 GenericName=NumPy Array Viewer
 Comment=Quick viewer for NumPy .npy and .npz files
-Exec={exec_path} %f
+Exec={_quote_exec(exec_path)} %f
 Icon={APP_ID}
 Terminal=false
 Categories=Science;Utility;
@@ -52,11 +70,13 @@ def _mime_xml() -> str:
   <mime-type type="{MIME_NPY}">
     <comment>NumPy array</comment>
     <glob pattern="*.npy" weight="100"/>
+    <glob pattern="*.NPY" weight="100"/>
   </mime-type>
   <mime-type type="{MIME_NPZ}">
     <comment>NumPy compressed archive</comment>
     <sub-class-of type="application/zip"/>
     <glob pattern="*.npz" weight="100"/>
+    <glob pattern="*.NPZ" weight="100"/>
   </mime-type>
 </mime-info>
 """
@@ -70,6 +90,42 @@ def _run(cmd: list[str]) -> None:
         subprocess.run([exe, *cmd[1:]], check=False, capture_output=True)
     except OSError:
         pass
+
+
+def _remove_default_associations() -> None:
+    # install() runs `xdg-mime default`, which records npyquick.desktop in
+    # mimeapps.list. Removing only the .desktop/MIME files would leave that
+    # dangling, so strip our entries here too.
+    path = _config_home() / "mimeapps.list"
+    if not path.exists():
+        return
+    parser = configparser.ConfigParser(interpolation=None)
+    parser.optionxform = str  # preserve case of MIME-type keys
+    try:
+        parser.read(path, encoding="utf-8")
+    except configparser.Error:
+        return
+
+    changed = False
+    for section in ("Default Applications", "Added Associations"):
+        if not parser.has_section(section):
+            continue
+        for mime in (MIME_NPY, MIME_NPZ):
+            if not parser.has_option(section, mime):
+                continue
+            entries = [
+                e for e in parser.get(section, mime).split(";")
+                if e and e != DESKTOP_FILE
+            ]
+            if entries:
+                parser.set(section, mime, ";".join(entries) + ";")
+            else:
+                parser.remove_option(section, mime)
+            changed = True
+
+    if changed:
+        with path.open("w", encoding="utf-8") as f:
+            parser.write(f, space_around_delimiters=False)
 
 
 def _paths(data: Path) -> tuple[Path, Path, Path]:
@@ -117,6 +173,8 @@ def uninstall() -> str:
         if p.exists():
             p.unlink()
             removed.append(str(p))
+
+    _remove_default_associations()
 
     _run(["update-mime-database", str(data / "mime")])
     _run(["update-desktop-database", str(desktop_path.parent)])

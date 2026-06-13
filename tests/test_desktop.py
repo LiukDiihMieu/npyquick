@@ -23,8 +23,14 @@ from npyquick import desktop
 def test_desktop_entry_uses_single_file_placeholder():
     entry = desktop._desktop_entry("/usr/bin/npyquick")
     exec_line = next(ln for ln in entry.splitlines() if ln.startswith("Exec="))
-    assert exec_line == "Exec=/usr/bin/npyquick %f"
+    assert exec_line == 'Exec="/usr/bin/npyquick" %f'
     assert "%F" not in entry
+
+
+def test_desktop_entry_quotes_path_with_spaces():
+    entry = desktop._desktop_entry("/home/My Projects/bin/npyquick")
+    exec_line = next(ln for ln in entry.splitlines() if ln.startswith("Exec="))
+    assert exec_line == 'Exec="/home/My Projects/bin/npyquick" %f'
 
 
 def test_desktop_entry_declares_both_mime_types():
@@ -39,13 +45,22 @@ def test_mime_xml_subclasses_zip_for_npz():
     assert '<glob pattern="*.npy" weight="100"/>' in xml
 
 
+def test_mime_xml_includes_uppercase_globs():
+    xml = desktop._mime_xml()
+    assert '<glob pattern="*.NPY" weight="100"/>' in xml
+    assert '<glob pattern="*.NPZ" weight="100"/>' in xml
+
+
 # ---------------------------------------------------------------------------
 # install() / uninstall() filesystem effects, with external tools stubbed.
 # ---------------------------------------------------------------------------
 
 @pytest.fixture
 def sandbox(tmp_path, monkeypatch):
+    # Redirect both XDG homes into the temp dir so install/uninstall never
+    # touch the developer's real ~/.local/share or ~/.config/mimeapps.list.
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
     monkeypatch.setattr(desktop, "_run", lambda cmd: None)
     monkeypatch.setattr(desktop, "_resolve_exec", lambda: "/usr/bin/npyquick")
     return tmp_path
@@ -72,7 +87,7 @@ def test_install_writes_all_three_files(sandbox):
 def test_install_writes_resolved_exec_path(sandbox):
     desktop.install()
     desktop_path, _, _ = _expected_paths(sandbox)
-    assert "Exec=/usr/bin/npyquick %f" in desktop_path.read_text()
+    assert 'Exec="/usr/bin/npyquick" %f' in desktop_path.read_text()
 
 
 def test_uninstall_removes_installed_files(sandbox):
@@ -85,3 +100,32 @@ def test_uninstall_removes_installed_files(sandbox):
 def test_uninstall_is_safe_when_nothing_installed(sandbox):
     msg = desktop.uninstall()
     assert "No npyquick desktop integration found." in msg
+
+
+def test_uninstall_strips_default_associations(sandbox, tmp_path):
+    config = tmp_path / "config"
+    config.mkdir(parents=True, exist_ok=True)
+    (config / "mimeapps.list").write_text(
+        "[Default Applications]\n"
+        "application/x-npy=npyquick.desktop;\n"
+        "application/x-npz=npyquick.desktop;\n"
+        "text/plain=gedit.desktop;\n"
+    )
+    desktop.install()
+    desktop.uninstall()
+    content = (config / "mimeapps.list").read_text()
+    assert "npyquick.desktop" not in content       # our entries removed
+    assert "text/plain=gedit.desktop;" in content   # unrelated entry preserved
+
+
+def test_uninstall_preserves_other_handlers_in_list(sandbox, tmp_path):
+    config = tmp_path / "config"
+    config.mkdir(parents=True, exist_ok=True)
+    (config / "mimeapps.list").write_text(
+        "[Default Applications]\n"
+        "application/x-npy=npyquick.desktop;other.desktop;\n"
+    )
+    desktop.uninstall()
+    content = (config / "mimeapps.list").read_text()
+    assert "npyquick.desktop" not in content
+    assert "other.desktop;" in content
