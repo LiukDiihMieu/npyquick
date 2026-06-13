@@ -28,8 +28,19 @@ def _config_home() -> Path:
 
 def _resolve_exec() -> str:
     # A bare `Exec=npyquick` relies on the file manager's session PATH, which
-    # often lacks the conda/venv bin dir. Bake in the absolute launcher path.
-    return shutil.which(APP_ID) or os.path.realpath(sys.argv[0])
+    # often lacks the conda/venv bin dir, so bake in the absolute path.
+    # Prefer the launcher actually invoked (argv[0]) over a PATH lookup of the
+    # app name: with several npyquick installs, which(APP_ID) could resolve to a
+    # different one than the user ran. which() resolves a bare argv[0] via PATH
+    # and accepts an explicit path as-is; resolve() makes it absolute.
+    found = shutil.which(sys.argv[0]) or shutil.which(APP_ID)
+    if found:
+        return str(Path(found).resolve())
+
+    raise RuntimeError(
+        "Could not find a usable 'npyquick' executable. "
+        "Install npyquick as a command-line script first."
+    )
 
 
 def _quote_exec(path: str) -> str:

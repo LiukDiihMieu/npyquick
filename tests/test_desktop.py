@@ -7,6 +7,7 @@ read and write under the sandbox.
 """
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -31,6 +32,31 @@ def test_desktop_entry_quotes_path_with_spaces():
     entry = desktop._desktop_entry("/home/My Projects/bin/npyquick")
     exec_line = next(ln for ln in entry.splitlines() if ln.startswith("Exec="))
     assert exec_line == 'Exec="/home/My Projects/bin/npyquick" %f'
+
+
+def test_resolve_exec_prefers_invoked_launcher_over_path_app(monkeypatch):
+    # argv[0] is a specific install; a different npyquick sits on PATH.
+    monkeypatch.setattr(desktop.sys, "argv", ["/opt/venv/bin/npyquick", "--install-desktop"])
+    monkeypatch.setattr(
+        desktop.shutil, "which",
+        lambda c: c if c == "/opt/venv/bin/npyquick" else "/usr/bin/npyquick",
+    )
+    assert desktop._resolve_exec() == "/opt/venv/bin/npyquick"
+
+
+def test_resolve_exec_is_always_absolute(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(desktop.sys, "argv", ["./npyquick"])
+    monkeypatch.setattr(desktop.shutil, "which", lambda c: c if c == "./npyquick" else None)
+    result = desktop._resolve_exec()
+    assert os.path.isabs(result)
+
+
+def test_resolve_exec_raises_when_no_executable(monkeypatch):
+    monkeypatch.setattr(desktop.sys, "argv", ["-c"])
+    monkeypatch.setattr(desktop.shutil, "which", lambda c: None)
+    with pytest.raises(RuntimeError, match="npyquick"):
+        desktop._resolve_exec()
 
 
 def test_desktop_entry_declares_both_mime_types():
