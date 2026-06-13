@@ -153,8 +153,8 @@ def install() -> str:
     for p in (desktop_path, mime_path, icon_path):
         p.parent.mkdir(parents=True, exist_ok=True)
 
-    desktop_path.write_text(_desktop_entry(_resolve_exec()))
-    mime_path.write_text(_mime_xml())
+    desktop_path.write_text(_desktop_entry(_resolve_exec()), encoding="utf-8")
+    mime_path.write_text(_mime_xml(), encoding="utf-8")
 
     icon_src = files(APP_ID) / "resources" / "icon.svg"
     try:
