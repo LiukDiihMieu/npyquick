@@ -21,15 +21,15 @@ npyquick is designed as a small, practical viewer for this job:
 
 ## Installation
 
-**With conda (recommended):**
+**With pip:**
+```bash
+pip install npyquick
+```
+
+**With conda:**
 ```bash
 conda env create -f environment.yml
 conda activate npyquick
-```
-
-**With pip only:**
-```bash
-pip install -e .
 ```
 
 Dependencies: Python ≥ 3.10, NumPy, SciPy, Matplotlib, and PySide6.
@@ -50,31 +50,31 @@ Files can be opened via **File › Open** (`Ctrl+O`) or by **dragging and droppi
 
 Preview 2D grayscale arrays and RGB arrays with interactive zoom, pan, colormap control, brightness adjustment, and a draggable cross-section profile.
 
-![Image view of an RGB array](docs/assets/screenshot-rgb.png)
+![Image view of an RGB array](https://raw.githubusercontent.com/LiukDiihMieu/npyquick/main/docs/assets/screenshot-rgb.png)
 
 ### Histogram view
 
 Inspect value distributions with linear or log-scaled counts, robust range selection, summary statistics, and NaN / Inf reporting.
 
-![Histogram view](docs/assets/screenshot-hist.png)
+![Histogram view](https://raw.githubusercontent.com/LiukDiihMieu/npyquick/main/docs/assets/screenshot-hist.png)
 
 ### Line Plot view
 
 Display 1D signals and paired `(x, y)` arrays with interactive zoom, pan, reset, and optional log-scaled axes.
 
-![Line plot view](docs/assets/screenshot-line.png)
+![Line plot view](https://raw.githubusercontent.com/LiukDiihMieu/npyquick/main/docs/assets/screenshot-line.png)
 
 ### Table view
 
 Fallback preview for arrays that are not naturally displayed as images or line plots, including higher-dimensional, complex, object, scalar, or empty arrays.
 
-![Table view](docs/assets/screenshot-table.png)
+![Table view](https://raw.githubusercontent.com/LiukDiihMieu/npyquick/main/docs/assets/screenshot-table.png)
 
 ### `.npz` archives
 
 When a `.npz` archive contains multiple arrays, npyquick shows a key selector with each array's name, shape, and dtype. Switching the selected key reloads the active view.
 
-![Open an .npz archive](docs/assets/screenshot-npz.png)
+![Open an .npz archive](https://raw.githubusercontent.com/LiukDiihMieu/npyquick/main/docs/assets/screenshot-npz.png)
 
 For detailed display rules, normalization behavior, downsampling, and performance limits, see [Display behavior](docs/behavior.md).
 

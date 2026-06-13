@@ -30,6 +30,11 @@ dependencies = [
     "PySide6>=6.5",
 ]
 
+[project.urls]
+Homepage = "https://github.com/LiukDiihMieu/npyquick"
+Repository = "https://github.com/LiukDiihMieu/npyquick"
+Issues = "https://github.com/LiukDiihMieu/npyquick/issues"
+
 [project.optional-dependencies]
 dev = ["pytest>=7.0"]
 
