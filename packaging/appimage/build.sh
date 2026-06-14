@@ -25,22 +25,28 @@ OUTPUT="${OUTPUT:-$REPO_ROOT/dist/npyquick-${ARCH}.AppImage}"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
+echo ">> creating clean venv"
+"$PYTHON" -m venv "$WORK/venv" 2>/dev/null || "$PYTHON" -m venv --without-pip "$WORK/venv"
+VPY="$WORK/venv/bin/python"
+if ! "$VPY" -m pip --version >/dev/null 2>&1; then
+    echo ">> bootstrapping pip (this venv lacks ensurepip)"
+    curl -sSL https://bootstrap.pypa.io/get-pip.py | "$VPY"
+fi
+"$VPY" -m pip install --upgrade pip >/dev/null
+
 WHEEL="${1:-}"
 if [ -z "$WHEEL" ]; then
+    # Build the wheel inside the venv so the host PYTHON doesn't need `build`
+    # installed — it usually isn't, outside CI. The wheel is pure-Python, so
+    # the result is identical regardless of which interpreter builds it.
     echo ">> building wheel"
-    "$PYTHON" -m build --wheel --outdir "$WORK/wheel"
+    "$VPY" -m pip install build >/dev/null
+    "$VPY" -m build --wheel --outdir "$WORK/wheel"
     WHEEL="$(ls "$WORK"/wheel/npyquick-*.whl | head -1)"
 fi
 echo ">> wheel: $WHEEL"
 
-echo ">> creating clean venv"
-"$PYTHON" -m venv "$WORK/venv" 2>/dev/null || "$PYTHON" -m venv --without-pip "$WORK/venv"
-if ! "$WORK/venv/bin/python" -m pip --version >/dev/null 2>&1; then
-    echo ">> bootstrapping pip (this venv lacks ensurepip)"
-    curl -sSL https://bootstrap.pypa.io/get-pip.py | "$WORK/venv/bin/python"
-fi
-"$WORK/venv/bin/python" -m pip install --upgrade pip >/dev/null
-"$WORK/venv/bin/python" -m pip install "$WHEEL" pyinstaller
+"$VPY" -m pip install "$WHEEL" pyinstaller
 
 echo ">> running PyInstaller"
 "$WORK/venv/bin/pyinstaller" --noconfirm \
@@ -79,12 +85,29 @@ for lib in libxcb-cursor.so.0; do
     fi
 done
 
-echo ">> fetching appimagetool"
+# Pin a stable appimagetool release and verify it: `continuous` is a rolling
+# tag, so the build would silently change over time and couldn't be audited.
+APPIMAGETOOL_VERSION="1.9.1"
+appimagetool_sha256() {
+    case "$1" in
+        x86_64) echo "ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0" ;;
+        *) echo "" ;;
+    esac
+}
+
+echo ">> fetching appimagetool $APPIMAGETOOL_VERSION"
 TOOL="${APPIMAGETOOL:-}"
 if [ -z "$TOOL" ]; then
     TOOL="$WORK/appimagetool-${ARCH}.AppImage"
     curl -sSL -o "$TOOL" \
-        "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-${ARCH}.AppImage"
+        "https://github.com/AppImage/appimagetool/releases/download/${APPIMAGETOOL_VERSION}/appimagetool-${ARCH}.AppImage"
+    want="$(appimagetool_sha256 "$ARCH")"
+    if [ -n "$want" ]; then
+        echo "$want  $TOOL" | sha256sum -c - \
+            || { echo ">> ERROR: appimagetool checksum mismatch" >&2; exit 1; }
+    else
+        echo ">> WARNING: no pinned checksum for arch $ARCH; skipping verification" >&2
+    fi
     chmod +x "$TOOL"
 fi
 
