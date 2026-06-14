@@ -20,7 +20,7 @@
       <li>Table view as a fallback for higher-dimensional, complex, object, scalar, or empty arrays.</li>
     </ul>
   </description>
-  <launchable type="desktop-id">npyquick.desktop</launchable>
+  <launchable type="desktop-id">io.github.liukdiihmieu.npyquick.desktop</launchable>
   <categories>
     <category>Science</category>
     <category>Utility</category>

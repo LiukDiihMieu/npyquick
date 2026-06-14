@@ -63,8 +63,10 @@ mkdir -p "$APPDIR/usr/bin" "$APPDIR/usr/lib" \
          "$APPDIR/usr/share/icons/hicolor/512x512/apps"
 cp -a "$WORK/dist/npyquick/." "$APPDIR/usr/bin/"
 install -m 755 packaging/appimage/AppRun "$APPDIR/AppRun"
-cp packaging/appimage/npyquick.desktop "$APPDIR/npyquick.desktop"
-cp packaging/appimage/npyquick.desktop "$APPDIR/usr/share/applications/npyquick.desktop"
+cp packaging/appimage/io.github.liukdiihmieu.npyquick.desktop \
+   "$APPDIR/io.github.liukdiihmieu.npyquick.desktop"
+cp packaging/appimage/io.github.liukdiihmieu.npyquick.desktop \
+   "$APPDIR/usr/share/applications/io.github.liukdiihmieu.npyquick.desktop"
 cp packaging/appimage/io.github.liukdiihmieu.npyquick.appdata.xml \
    "$APPDIR/usr/share/metainfo/io.github.liukdiihmieu.npyquick.appdata.xml"
 # Declare the .npy/.npz MIME types (same file --install-desktop installs). Inert
