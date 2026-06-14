@@ -10,10 +10,15 @@ import sys
 from importlib.resources import files
 from pathlib import Path
 
+# APP_ID is the Python package name (used to locate bundled resources).
+# APP_RDNS is the reverse-DNS application id; the desktop file and icon are
+# named after it so they match the AppStream component id, the convention
+# desktop environments use to pair a window with its launcher.
 APP_ID = "npyquick"
-DESKTOP_FILE = "npyquick.desktop"
+APP_RDNS = "io.github.liukdiihmieu.npyquick"
+DESKTOP_FILE = f"{APP_RDNS}.desktop"
 MIME_FILE = "npyquick.xml"
-ICON_FILE = "npyquick.svg"
+ICON_FILE = f"{APP_RDNS}.svg"
 MIME_RESOURCE = "io.github.liukdiihmieu.npyquick.mime.xml"
 MIME_NPY = "application/x-npy"
 MIME_NPZ = "application/x-npz"
@@ -72,7 +77,7 @@ Name=npyquick
 GenericName=NumPy Array Viewer
 Comment=Quick viewer for NumPy .npy and .npz files
 Exec={_quote_exec(exec_path)} %f
-Icon={APP_ID}
+Icon={APP_RDNS}
 Terminal=false
 Categories=Science;Utility;
 MimeType={MIME_NPY};{MIME_NPZ};
@@ -100,7 +105,7 @@ def _run(cmd: list[str]) -> None:
 
 
 def _remove_default_associations() -> None:
-    # install() runs `xdg-mime default`, which records npyquick.desktop in
+    # install() runs `xdg-mime default`, which records our desktop file in
     # mimeapps.list. Removing only the .desktop/MIME files would leave that
     # dangling, so strip our entries here too.
     path = _config_home() / "mimeapps.list"

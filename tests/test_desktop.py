@@ -84,6 +84,15 @@ def test_desktop_entry_declares_both_mime_types():
     assert f"MimeType={desktop.MIME_NPY};{desktop.MIME_NPZ};" in entry
 
 
+def test_desktop_entry_icon_uses_rdns_id():
+    # Icon must match the installed icon basename (ICON_FILE) and the AppStream
+    # component id, so the desktop pairs with the right icon.
+    entry = desktop._desktop_entry("/usr/bin/npyquick")
+    assert f"Icon={desktop.APP_RDNS}" in entry
+    assert desktop.ICON_FILE == f"{desktop.APP_RDNS}.svg"
+    assert desktop.DESKTOP_FILE == f"{desktop.APP_RDNS}.desktop"
+
+
 def test_mime_xml_subclasses_zip_for_npz():
     xml = desktop._mime_xml()
     assert '<sub-class-of type="application/zip"/>' in xml
@@ -123,9 +132,9 @@ def sandbox(tmp_path, monkeypatch):
 
 def _expected_paths(data: Path) -> tuple[Path, Path, Path]:
     return (
-        data / "applications" / "npyquick.desktop",
-        data / "mime" / "packages" / "npyquick.xml",
-        data / "icons" / "hicolor" / "scalable" / "apps" / "npyquick.svg",
+        data / "applications" / desktop.DESKTOP_FILE,
+        data / "mime" / "packages" / desktop.MIME_FILE,
+        data / "icons" / "hicolor" / "scalable" / "apps" / desktop.ICON_FILE,
     )
 
 
@@ -162,14 +171,14 @@ def test_uninstall_strips_default_associations(sandbox, tmp_path):
     config.mkdir(parents=True, exist_ok=True)
     (config / "mimeapps.list").write_text(
         "[Default Applications]\n"
-        "application/x-npy=npyquick.desktop;\n"
-        "application/x-npz=npyquick.desktop;\n"
+        f"application/x-npy={desktop.DESKTOP_FILE};\n"
+        f"application/x-npz={desktop.DESKTOP_FILE};\n"
         "text/plain=gedit.desktop;\n"
     )
     desktop.install()
     desktop.uninstall()
     content = (config / "mimeapps.list").read_text()
-    assert "npyquick.desktop" not in content       # our entries removed
+    assert desktop.DESKTOP_FILE not in content      # our entries removed
     assert "text/plain=gedit.desktop;" in content   # unrelated entry preserved
 
 
@@ -178,9 +187,9 @@ def test_uninstall_preserves_other_handlers_in_list(sandbox, tmp_path):
     config.mkdir(parents=True, exist_ok=True)
     (config / "mimeapps.list").write_text(
         "[Default Applications]\n"
-        "application/x-npy=npyquick.desktop;other.desktop;\n"
+        f"application/x-npy={desktop.DESKTOP_FILE};other.desktop;\n"
     )
     desktop.uninstall()
     content = (config / "mimeapps.list").read_text()
-    assert "npyquick.desktop" not in content
+    assert desktop.DESKTOP_FILE not in content
     assert "other.desktop;" in content

@@ -73,11 +73,14 @@ cp packaging/appimage/io.github.liukdiihmieu.npyquick.appdata.xml \
 # until a tool installs it host-side; ships here to document intent.
 cp src/npyquick/resources/io.github.liukdiihmieu.npyquick.mime.xml \
    "$APPDIR/usr/share/mime/packages/npyquick.xml"
-cp packaging/appimage/npyquick.png "$APPDIR/npyquick.png"
+# Install icons under the reverse-DNS name so they match the desktop Icon= key.
+cp packaging/appimage/npyquick.png "$APPDIR/io.github.liukdiihmieu.npyquick.png"
 cp packaging/appimage/npyquick.png "$APPDIR/.DirIcon"
-cp packaging/appimage/npyquick.png "$APPDIR/usr/share/icons/hicolor/256x256/apps/npyquick.png"
+cp packaging/appimage/npyquick.png \
+   "$APPDIR/usr/share/icons/hicolor/256x256/apps/io.github.liukdiihmieu.npyquick.png"
 [ -f packaging/appimage/npyquick-512.png ] && \
-    cp packaging/appimage/npyquick-512.png "$APPDIR/usr/share/icons/hicolor/512x512/apps/npyquick.png"
+    cp packaging/appimage/npyquick-512.png \
+       "$APPDIR/usr/share/icons/hicolor/512x512/apps/io.github.liukdiihmieu.npyquick.png"
 
 # Bundle host libs PyInstaller doesn't ship: Qt >= 6.5 dlopens libxcb-cursor,
 # which is absent on many systems. AppRun adds usr/lib to LD_LIBRARY_PATH.
