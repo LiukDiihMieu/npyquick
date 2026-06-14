@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import os
+from importlib.metadata import PackageNotFoundError, version
 
 import numpy as np
 from PySide6.QtCore import Qt, QSettings, QUrl
@@ -15,6 +16,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QMainWindow,
+    QMessageBox,
     QStackedWidget,
     QStatusBar,
     QTabBar,
@@ -44,6 +46,8 @@ from .views.image import ImageView
 from .views.lineplot import LineplotView
 from .views.pixel_size_dialog import PixelSizeDialog
 from .views.table import RawTableView
+
+REPO_URL = "https://github.com/LiukDiihMieu/npyquick"
 
 
 def _kbd(seq: str) -> str:
@@ -146,6 +150,26 @@ class MainWindow(QMainWindow):
             a.triggered.connect(lambda checked, n=name: self._apply_colormap(n))
             group.addAction(a)
             cmap_menu.addAction(a)
+
+        hm = self.menuBar().addMenu("&Help")
+        about_a = QAction("&About npyquick", self)
+        about_a.triggered.connect(self._show_about)
+        hm.addAction(about_a)
+
+    def _show_about(self) -> None:
+        try:
+            ver = version("npyquick")
+        except PackageNotFoundError:
+            ver = "unknown"
+        QMessageBox.about(
+            self,
+            "About npyquick",
+            f"<h3>npyquick {ver}</h3>"
+            "<p>Quick viewer for NumPy .npy and .npz files.</p>"
+            f'<p><a href="{REPO_URL}">GitHub repository</a><br>'
+            f'<a href="{REPO_URL}/issues">Report an issue</a></p>'
+            "<p>Licensed under GPL-3.0-or-later.</p>",
+        )
 
     def _build_central(self) -> None:
         self._image_view = ImageView()
