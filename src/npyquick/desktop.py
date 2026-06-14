@@ -10,10 +10,16 @@ import sys
 from importlib.resources import files
 from pathlib import Path
 
+# APP_ID is the Python package name (used to locate bundled resources).
+# APP_RDNS is the reverse-DNS application id; the desktop file and icon are
+# named after it so they match the AppStream component id, the convention
+# desktop environments use to pair a window with its launcher.
 APP_ID = "npyquick"
-DESKTOP_FILE = "npyquick.desktop"
+APP_RDNS = "io.github.liukdiihmieu.npyquick"
+DESKTOP_FILE = f"{APP_RDNS}.desktop"
 MIME_FILE = "npyquick.xml"
-ICON_FILE = "npyquick.svg"
+ICON_FILE = f"{APP_RDNS}.svg"
+MIME_RESOURCE = "io.github.liukdiihmieu.npyquick.mime.xml"
 MIME_NPY = "application/x-npy"
 MIME_NPZ = "application/x-npz"
 
@@ -27,6 +33,14 @@ def _config_home() -> Path:
 
 
 def _resolve_exec() -> str:
+    # Inside an AppImage, $APPIMAGE is the stable absolute path of the .AppImage
+    # file. argv[0]/which() would instead point into the ephemeral per-run mount
+    # (/tmp/.mount_xxxx), which is gone once the app exits, so a baked Exec from
+    # it would break. Prefer $APPIMAGE so file-manager double-click keeps working.
+    appimage = os.environ.get("APPIMAGE")
+    if appimage:
+        return str(Path(appimage).resolve())
+
     # A bare `Exec=npyquick` relies on the file manager's session PATH, which
     # often lacks the conda/venv bin dir, so bake in the absolute path.
     # Prefer the launcher actually invoked (argv[0]) over a PATH lookup of the
@@ -63,7 +77,7 @@ Name=npyquick
 GenericName=NumPy Array Viewer
 Comment=Quick viewer for NumPy .npy and .npz files
 Exec={_quote_exec(exec_path)} %f
-Icon={APP_ID}
+Icon={APP_RDNS}
 Terminal=false
 Categories=Science;Utility;
 MimeType={MIME_NPY};{MIME_NPZ};
@@ -73,24 +87,11 @@ StartupNotify=true
 
 
 def _mime_xml() -> str:
-    # .npz is a zip internally; without sub-class-of the system's content
-    # sniffing reports application/zip and the *.npz glob loses. Declaring the
-    # subclass lets the more specific glob win deterministically.
-    return f"""<?xml version="1.0" encoding="UTF-8"?>
-<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
-  <mime-type type="{MIME_NPY}">
-    <comment>NumPy array</comment>
-    <glob pattern="*.npy" weight="100"/>
-    <glob pattern="*.NPY" weight="100"/>
-  </mime-type>
-  <mime-type type="{MIME_NPZ}">
-    <comment>NumPy compressed archive</comment>
-    <sub-class-of type="application/zip"/>
-    <glob pattern="*.npz" weight="100"/>
-    <glob pattern="*.NPZ" weight="100"/>
-  </mime-type>
-</mime-info>
-"""
+    # Single source of truth shared with the AppImage build (which copies the
+    # same file into usr/share/mime/packages). The MIME_NPY / MIME_NPZ constants
+    # below must stay in sync with the type strings in this resource; a test
+    # guards that. .npz needs sub-class-of application/zip — see the resource.
+    return (files(APP_ID) / "resources" / MIME_RESOURCE).read_text(encoding="utf-8")
 
 
 def _run(cmd: list[str]) -> None:
@@ -104,7 +105,7 @@ def _run(cmd: list[str]) -> None:
 
 
 def _remove_default_associations() -> None:
-    # install() runs `xdg-mime default`, which records npyquick.desktop in
+    # install() runs `xdg-mime default`, which records our desktop file in
     # mimeapps.list. Removing only the .desktop/MIME files would leave that
     # dangling, so strip our entries here too.
     path = _config_home() / "mimeapps.list"

@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.liukdiihmieu.npyquick</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <name>npyquick</name>
+  <summary>Quick viewer for NumPy .npy and .npz files</summary>
+  <description>
+    <p>
+      npyquick is a small, practical viewer for inspecting NumPy .npy and .npz
+      array files without writing a notebook or launching a full IDE. Open files
+      from the terminal or the file manager and inspect common scientific data
+      layouts immediately.
+    </p>
+    <p>It provides several views chosen automatically from the array:</p>
+    <ul>
+      <li>Image view for 2D grayscale and RGB arrays, with zoom, pan, colormap and brightness control, and a draggable cross-section profile.</li>
+      <li>Histogram view with linear or log-scaled counts, robust range selection, and NaN / Inf reporting.</li>
+      <li>Line plot view for 1D signals and paired (x, y) arrays.</li>
+      <li>Table view as a fallback for higher-dimensional, complex, object, scalar, or empty arrays.</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">io.github.liukdiihmieu.npyquick.desktop</launchable>
+  <categories>
+    <category>Science</category>
+    <category>Utility</category>
+  </categories>
+  <url type="homepage">https://github.com/LiukDiihMieu/npyquick</url>
+  <url type="bugtracker">https://github.com/LiukDiihMieu/npyquick/issues</url>
+  <developer id="io.github.liukdiihmieu">
+    <name>LiukDiihMieu</name>
+  </developer>
+  <screenshots>
+    <screenshot type="default">
+      <caption>Image view of an RGB array</caption>
+      <image>https://raw.githubusercontent.com/LiukDiihMieu/npyquick/main/docs/assets/screenshot-rgb.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Histogram view</caption>
+      <image>https://raw.githubusercontent.com/LiukDiihMieu/npyquick/main/docs/assets/screenshot-hist.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Line plot view</caption>
+      <image>https://raw.githubusercontent.com/LiukDiihMieu/npyquick/main/docs/assets/screenshot-line.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Table view</caption>
+      <image>https://raw.githubusercontent.com/LiukDiihMieu/npyquick/main/docs/assets/screenshot-table.png</image>
+    </screenshot>
+  </screenshots>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="0.1.1" date="2026-06-13"/>
+  </releases>
+</component>

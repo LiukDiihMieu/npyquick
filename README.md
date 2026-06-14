@@ -6,6 +6,12 @@
   </picture>
 </p>
 
+<p align="center">
+  <a href="https://pypi.org/project/npyquick/"><img alt="PyPI version" src="https://img.shields.io/pypi/v/npyquick"></a>
+  <a href="https://pypi.org/project/npyquick/"><img alt="Python versions" src="https://img.shields.io/pypi/pyversions/npyquick"></a>
+  <a href="LICENSE"><img alt="License" src="https://img.shields.io/github/license/LiukDiihMieu/npyquick"></a>
+</p>
+
 ## Why npyquick?
 
 Researchers often need to quickly inspect .npy and .npz files without writing a notebook, launching an IDE, or remembering the array shape in advance.
@@ -21,6 +27,17 @@ npyquick is designed as a small, practical viewer for this job:
 
 ## Installation
 
+**Linux (AppImage):**
+
+On x86-64 Linux, AppImage is available for one-click installation. Download `npyquick-x86_64.AppImage` from the [latest release](https://github.com/LiukDiihMieu/npyquick/releases/latest), then:
+
+```bash
+chmod +x npyquick-x86_64.AppImage
+./npyquick-x86_64.AppImage path/to/file.npy
+```
+
+To open `.npy` / `.npz` by double-clicking in your file manager, register the default handler once with `./npyquick-x86_64.AppImage --install-desktop` (details in [Linux desktop integration](#linux-desktop-integration)). If you integrate the AppImage with a tool like [AppImageLauncher](https://github.com/TheAssassin/AppImageLauncher), this association is set up for you automatically.
+
 **With pip:**
 ```bash
 pip install npyquick
@@ -32,7 +49,7 @@ conda env create -f environment.yml
 conda activate npyquick
 ```
 
-Dependencies: Python ≥ 3.10, NumPy, SciPy, Matplotlib, and PySide6.
+The pip and conda installs need Python ≥ 3.10, NumPy, SciPy, Matplotlib, and PySide6.
 
 ## Usage
 
@@ -115,7 +132,7 @@ Works on desktops that follow the freedesktop.org desktop-entry and MIME standar
 <details>
 <summary>Manual setup (without the CLI command)</summary>
 
-Create `~/.local/share/applications/npyquick.desktop`, replacing the `Exec=` path with the output of `which npyquick`:
+Create `~/.local/share/applications/io.github.liukdiihmieu.npyquick.desktop`, replacing the `Exec=` path with the output of `which npyquick`:
 
 ```ini
 [Desktop Entry]
@@ -123,7 +140,7 @@ Type=Application
 Name=npyquick
 Comment=Open NumPy array files
 Exec=/path/to/npyquick %f
-Icon=npyquick
+Icon=io.github.liukdiihmieu.npyquick
 Terminal=false
 Categories=Science;Utility;
 MimeType=application/x-npy;application/x-npz;
@@ -154,8 +171,8 @@ Then update the databases and set the default handler:
 ```bash
 update-mime-database ~/.local/share/mime
 update-desktop-database ~/.local/share/applications
-xdg-mime default npyquick.desktop application/x-npy
-xdg-mime default npyquick.desktop application/x-npz
+xdg-mime default io.github.liukdiihmieu.npyquick.desktop application/x-npy
+xdg-mime default io.github.liukdiihmieu.npyquick.desktop application/x-npz
 ```
 </details>
 

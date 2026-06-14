@@ -42,6 +42,9 @@ def main() -> None:
 
     app = QApplication([sys.argv[0]] + qt_argv)
     app.setApplicationName("npyquick")
+    # Pair the window with our desktop file so compositors show the right
+    # taskbar/dock icon. Must match the installed <id>.desktop basename.
+    app.setDesktopFileName("io.github.liukdiihmieu.npyquick")
 
     window = MainWindow()
     window.show()

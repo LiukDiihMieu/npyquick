@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+  <mime-type type="application/x-npy">
+    <comment>NumPy array</comment>
+    <glob pattern="*.npy" weight="100"/>
+    <glob pattern="*.NPY" weight="100"/>
+  </mime-type>
+  <!-- .npz is a zip internally; without sub-class-of the system's content
+       sniffing reports application/zip and the *.npz glob loses. Declaring the
+       subclass lets the more specific glob win deterministically. -->
+  <mime-type type="application/x-npz">
+    <comment>NumPy compressed archive</comment>
+    <sub-class-of type="application/zip"/>
+    <glob pattern="*.npz" weight="100"/>
+    <glob pattern="*.NPZ" weight="100"/>
+  </mime-type>
+</mime-info>
