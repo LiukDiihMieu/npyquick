@@ -7,7 +7,8 @@ from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from PySide6.QtCore import Qt, QSettings
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget,
+    QCheckBox, QComboBox, QHBoxLayout, QLabel, QPushButton, QSizePolicy,
+    QVBoxLayout, QWidget,
 )
 
 from ..core import limits
@@ -245,6 +246,8 @@ class HistogramView(BaseView):
         self._anomaly_label.setVisible(False)
 
         ctrl = QWidget()
+        # The control row is one line tall; never let it absorb vertical space.
+        ctrl.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         ctrl_layout = QHBoxLayout(ctrl)
         ctrl_layout.setContentsMargins(6, 3, 6, 3)
         ctrl_layout.addWidget(QLabel("Bins:"))
@@ -266,7 +269,7 @@ class HistogramView(BaseView):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
         layout.addWidget(ctrl)
-        layout.addWidget(self._canvas)
+        layout.addWidget(self._canvas, 1)
 
     @classmethod
     def can_handle(cls, array: np.ndarray) -> bool:
