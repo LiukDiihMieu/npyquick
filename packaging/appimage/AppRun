@@ -3,5 +3,5 @@
 # gap-fill libs (e.g. libxcb-cursor, absent on some hosts), then exec the
 # PyInstaller binary, forwarding all args (a .npy/.npz path on double-click).
 HERE="$(dirname "$(readlink -f "${0}")")"
-export LD_LIBRARY_PATH="${HERE}/usr/lib:${LD_LIBRARY_PATH}"
+export LD_LIBRARY_PATH="${HERE}/usr/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 exec "${HERE}/usr/bin/npyquick" "$@"
