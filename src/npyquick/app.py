@@ -46,6 +46,11 @@ from .views.pixel_size_dialog import PixelSizeDialog
 from .views.table import RawTableView
 
 
+def _kbd(seq: str) -> str:
+    # Native display text for a shortcut: "Ctrl+O" on Linux/Windows, "⌘O" on macOS.
+    return QKeySequence(seq).toString(QKeySequence.NativeText)
+
+
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
@@ -79,7 +84,7 @@ class MainWindow(QMainWindow):
         prev_tab_sc = QShortcut(QKeySequence("Ctrl+Shift+Tab"), self)
         prev_tab_sc.activated.connect(self._prev_tab)
 
-        self._sb.showMessage("File › Open  (Ctrl+O)  to load a .npy or .npz file.")
+        self._sb.showMessage(f"File › Open  ({_kbd('Ctrl+O')})  to load a .npy or .npz file.")
 
         geom = _s.value("geometry")
         if geom:
@@ -203,7 +208,7 @@ class MainWindow(QMainWindow):
         self._set_tabs_enabled([])
         self._show_empty(
             "Open a .npy or .npz file\n\n"
-            "File › Open  (Ctrl+O)  or drag a file onto the window"
+            f"File › Open  ({_kbd('Ctrl+O')})  or drag a file onto the window"
         )
 
     # ------------------------------------------------------------------
@@ -427,7 +432,7 @@ class MainWindow(QMainWindow):
             return
         canvas = self._focused_canvas()
         if canvas is None:
-            self._sb.showMessage("Click a plot first, then press Ctrl+C to copy", 2500)
+            self._sb.showMessage(f"Click a plot first, then press {_kbd('Ctrl+C')} to copy", 2500)
             return
         canvas._copy_to_clipboard()
 
@@ -438,7 +443,7 @@ class MainWindow(QMainWindow):
             return
         canvas = self._focused_canvas()
         if canvas is None:
-            self._sb.showMessage("Click a plot first, then press Ctrl+S to export", 2500)
+            self._sb.showMessage(f"Click a plot first, then press {_kbd('Ctrl+S')} to export", 2500)
             return
         canvas._export_figure()
 
