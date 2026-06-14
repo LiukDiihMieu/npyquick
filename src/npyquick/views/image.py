@@ -7,7 +7,8 @@ from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from PySide6.QtCore import Qt, QSettings
 from PySide6.QtWidgets import (
-    QHBoxLayout, QLabel, QLineEdit, QPushButton, QSplitter, QVBoxLayout, QWidget,
+    QHBoxLayout, QLabel, QLineEdit, QPushButton, QSizePolicy, QSplitter,
+    QVBoxLayout, QWidget,
 )
 
 from ..core import limits
@@ -449,6 +450,8 @@ class ImageView(BaseView, SpatialView, ColormappedView):
         self._anomaly_label.setVisible(False)
 
         ctrl = QWidget()
+        # The control row is one line tall; never let it absorb vertical space.
+        ctrl.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         ctrl_layout = QHBoxLayout(ctrl)
         ctrl_layout.setContentsMargins(6, 3, 6, 3)
         ctrl_layout.addWidget(QLabel("vmin:"))
@@ -466,7 +469,7 @@ class ImageView(BaseView, SpatialView, ColormappedView):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
         layout.addWidget(ctrl)
-        layout.addWidget(sp)
+        layout.addWidget(sp, 1)
 
     @classmethod
     def can_handle(cls, array: np.ndarray) -> bool:
