@@ -97,6 +97,15 @@ def test_mime_xml_includes_uppercase_globs():
     assert '<glob pattern="*.NPZ" weight="100"/>' in xml
 
 
+def test_mime_xml_matches_mime_constants():
+    # The XML now lives in a resource file, but the MIME_NPY / MIME_NPZ
+    # constants are still used for xdg-mime and mimeapps.list handling. Guard
+    # against the two drifting apart.
+    xml = desktop._mime_xml()
+    assert f'type="{desktop.MIME_NPY}"' in xml
+    assert f'type="{desktop.MIME_NPZ}"' in xml
+
+
 # ---------------------------------------------------------------------------
 # install() / uninstall() filesystem effects, with external tools stubbed.
 # ---------------------------------------------------------------------------

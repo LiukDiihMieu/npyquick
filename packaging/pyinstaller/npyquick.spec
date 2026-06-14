@@ -11,11 +11,17 @@ entry = os.path.join(SPECPATH, "npyquick_entry.py")
 # PyInstaller's bundled hooks.
 hiddenimports = ["matplotlib.backends.backend_qtagg"]
 
+# Bundle npyquick's own package data (icon + MIME XML) so `--install-desktop`
+# works when run from the AppImage. Filter to the real assets — resources/ may
+# contain a stray .ipynb_checkpoints dir locally.
+datas = collect_data_files("matplotlib")
+datas += collect_data_files("npyquick", includes=["resources/*.svg", "resources/*.xml"])
+
 a = Analysis(
     [entry],
     pathex=[],
     binaries=[],
-    datas=collect_data_files("matplotlib"),
+    datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],
     runtime_hooks=[],

@@ -14,6 +14,7 @@ APP_ID = "npyquick"
 DESKTOP_FILE = "npyquick.desktop"
 MIME_FILE = "npyquick.xml"
 ICON_FILE = "npyquick.svg"
+MIME_RESOURCE = "io.github.liukdiihmieu.npyquick.mime.xml"
 MIME_NPY = "application/x-npy"
 MIME_NPZ = "application/x-npz"
 
@@ -81,24 +82,11 @@ StartupNotify=true
 
 
 def _mime_xml() -> str:
-    # .npz is a zip internally; without sub-class-of the system's content
-    # sniffing reports application/zip and the *.npz glob loses. Declaring the
-    # subclass lets the more specific glob win deterministically.
-    return f"""<?xml version="1.0" encoding="UTF-8"?>
-<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
-  <mime-type type="{MIME_NPY}">
-    <comment>NumPy array</comment>
-    <glob pattern="*.npy" weight="100"/>
-    <glob pattern="*.NPY" weight="100"/>
-  </mime-type>
-  <mime-type type="{MIME_NPZ}">
-    <comment>NumPy compressed archive</comment>
-    <sub-class-of type="application/zip"/>
-    <glob pattern="*.npz" weight="100"/>
-    <glob pattern="*.NPZ" weight="100"/>
-  </mime-type>
-</mime-info>
-"""
+    # Single source of truth shared with the AppImage build (which copies the
+    # same file into usr/share/mime/packages). The MIME_NPY / MIME_NPZ constants
+    # below must stay in sync with the type strings in this resource; a test
+    # guards that. .npz needs sub-class-of application/zip — see the resource.
+    return (files(APP_ID) / "resources" / MIME_RESOURCE).read_text(encoding="utf-8")
 
 
 def _run(cmd: list[str]) -> None:

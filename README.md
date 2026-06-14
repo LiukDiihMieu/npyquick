@@ -30,6 +30,8 @@ chmod +x npyquick-x86_64.AppImage
 ./npyquick-x86_64.AppImage path/to/file.npy
 ```
 
+To open `.npy` / `.npz` by double-clicking in your file manager, register the default handler once with `./npyquick-x86_64.AppImage --install-desktop` (details in [Linux desktop integration](#linux-desktop-integration)).
+
 **With pip:**
 ```bash
 pip install npyquick
