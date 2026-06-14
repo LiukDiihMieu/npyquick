@@ -26,6 +26,19 @@ from PySide6.QtWidgets import (
 
 from .core.stats import ArrayStats, array_stats
 from .model import NpyDataModel
+from .views.base import ColormappedView, ExportableMixin, SpatialView
+from .views.histogram import HistogramView
+from .views.image import ImageView
+from .views.lineplot import LineplotView
+from .views.pixel_size_dialog import PixelSizeDialog
+from .views.table import RawTableView
+
+REPO_URL = "https://github.com/LiukDiihMieu/npyquick"
+
+
+def _kbd(seq: str) -> str:
+    # Native display text for a shortcut: "Ctrl+O" on Linux/Windows, "⌘O" on macOS.
+    return QKeySequence(seq).toString(QKeySequence.NativeText)
 
 
 def _format_array_summary(array: np.ndarray, stats: ArrayStats | None = None) -> str:
@@ -40,19 +53,6 @@ def _format_array_summary(array: np.ndarray, stats: ArrayStats | None = None) ->
             if stats.has_anomaly:
                 parts.append(stats.anomaly_str())
     return "  |  ".join(parts)
-from .views.base import ColormappedView, ExportableMixin, SpatialView
-from .views.histogram import HistogramView
-from .views.image import ImageView
-from .views.lineplot import LineplotView
-from .views.pixel_size_dialog import PixelSizeDialog
-from .views.table import RawTableView
-
-REPO_URL = "https://github.com/LiukDiihMieu/npyquick"
-
-
-def _kbd(seq: str) -> str:
-    # Native display text for a shortcut: "Ctrl+O" on Linux/Windows, "⌘O" on macOS.
-    return QKeySequence(seq).toString(QKeySequence.NativeText)
 
 
 class MainWindow(QMainWindow):
@@ -286,7 +286,7 @@ class MainWindow(QMainWindow):
         self._reload_action.setEnabled(True)
         self._last_dir = os.path.dirname(os.path.abspath(path))
         QSettings("npyquick", "npyquick").setValue("last_dir", self._last_dir)
-        self.setWindowTitle(f"npyquick — {path}")
+        self.setWindowTitle(f"npyquick — {os.path.basename(path)}")
 
         metas = self._model.available_array_meta()
 
@@ -473,7 +473,7 @@ class MainWindow(QMainWindow):
 
     def dragEnterEvent(self, ev) -> None:
         urls = ev.mimeData().urls()
-        if urls and all(QUrl.toLocalFile(u).endswith((".npy", ".npz")) for u in urls):
+        if urls and all(QUrl.toLocalFile(u).lower().endswith((".npy", ".npz")) for u in urls):
             ev.acceptProposedAction()
 
     def dropEvent(self, ev) -> None:
