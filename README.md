@@ -38,6 +38,12 @@ chmod +x npyquick-x86_64.AppImage
 
 To open `.npy` / `.npz` by double-clicking in your file manager, register the default handler once with `./npyquick-x86_64.AppImage --install-desktop` (details in [Linux desktop integration](#linux-desktop-integration)). If you integrate the AppImage with a tool like [AppImageLauncher](https://github.com/TheAssassin/AppImageLauncher), this association is set up for you automatically.
 
+**Windows:**
+
+Download the `npyquick-<version>-setup.exe` installer from the [latest release](https://github.com/LiukDiihMieu/npyquick/releases/latest) and run it. It installs per-user (no administrator rights needed) and adds a Start Menu shortcut. To open `.npy` / `.npz` by double-clicking, tick *Associate .npy and .npz files with npyquick* during setup.
+
+The Windows build is currently unsigned, so the first run may show a SmartScreen prompt. Download only from the official GitHub Releases page; after confirming the file name and source, choose *More info → Run anyway*.
+
 **With pip:**
 ```bash
 pip install npyquick

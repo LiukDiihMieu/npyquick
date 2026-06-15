@@ -1,10 +1,16 @@
 # -*- mode: python ; coding: utf-8 -*-
-# PyInstaller onedir spec for npyquick. Built into an AppImage by packaging/appimage.
+# PyInstaller onedir spec for npyquick, shared across platforms: wrapped into an
+# AppImage by packaging/appimage, and into a Windows installer by packaging/windows.
 import os
 
 from PyInstaller.utils.hooks import collect_data_files
 
 entry = os.path.join(SPECPATH, "npyquick_entry.py")
+
+# Windows: embed the app icon in the .exe if the asset is present. Harmless
+# elsewhere — PyInstaller ignores `icon` for the Linux ELF, and None is allowed.
+_icon = os.path.join(SPECPATH, "..", "windows", "npyquick.ico")
+icon = _icon if os.path.exists(_icon) else None
 
 # matplotlib's Qt backend is imported dynamically, so PyInstaller can't see it
 # by static analysis; name it explicitly. numpy / scipy / PySide6 are covered by
@@ -42,6 +48,7 @@ exe = EXE(
     strip=False,
     upx=False,
     console=False,
+    icon=icon,
 )
 
 coll = COLLECT(
