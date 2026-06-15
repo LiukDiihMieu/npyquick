@@ -102,6 +102,9 @@ class BaseView(QWidget):
     def set_on_status(self, cb: callable) -> None:
         self._on_status = cb
 
+    def set_on_canvas_selected(self, cb: callable) -> None:
+        pass
+
     def refresh_status(self) -> None:
         """Push the view's current status to the status bar. Called on tab switch."""
 

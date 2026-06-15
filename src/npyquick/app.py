@@ -75,13 +75,9 @@ class MainWindow(QMainWindow):
         self._sb = QStatusBar()
         self.setStatusBar(self._sb)
 
+        self._selected_export_target: ExportableMixin | None = None
         self._build_menu()
         self._build_central()
-
-        copy_sc = QShortcut(QKeySequence.StandardKey.Copy, self)
-        copy_sc.activated.connect(self._copy_focused_plot)
-        save_sc = QShortcut(QKeySequence.StandardKey.Save, self)
-        save_sc.activated.connect(self._export_focused_plot)
 
         next_tab_sc = QShortcut(QKeySequence("Ctrl+Tab"), self)
         next_tab_sc.activated.connect(self._next_tab)
@@ -116,6 +112,16 @@ class MainWindow(QMainWindow):
         self._reload_action = reload_a
 
         fm.addSeparator()
+        # QAction (not QShortcut) so Qt routes the shortcut through the menu-bar
+        # system, which works on macOS regardless of which canvas holds focus.
+        # Fixed label; targets the last-clicked canvas (set via _on_press).
+        export_sel_a = QAction("Export Selected Plot…", self)
+        export_sel_a.setShortcut(QKeySequence.StandardKey.Save)
+        export_sel_a.triggered.connect(self._export_selected)
+        fm.addAction(export_sel_a)
+        self._export_selected_action = export_sel_a
+
+        fm.addSeparator()
         quit_a = QAction("&Quit", self)
         quit_a.setShortcut("Ctrl+Q")
         quit_a.triggered.connect(self.close)
@@ -123,6 +129,22 @@ class MainWindow(QMainWindow):
         self._quit_action = quit_a
 
         fm.aboutToShow.connect(self._rebuild_export_menu)
+
+        # Edit menu: Cmd+C copies the last-clicked canvas.
+        em = self.menuBar().addMenu("&Edit")
+        copy_sel_a = QAction("Copy Selected Plot", self)
+        copy_sel_a.setShortcut(QKeySequence.StandardKey.Copy)
+        copy_sel_a.triggered.connect(self._copy_selected)
+        em.addAction(copy_sel_a)
+        self._copy_selected_action = copy_sel_a
+
+        # While a menu is open, grey out the selected-plot actions if nothing is
+        # selected (so the menu reads naturally). Re-enable on close so the
+        # keyboard shortcut still fires and shows the "click a plot first" hint —
+        # a disabled QAction would swallow its shortcut entirely.
+        for menu in (fm, em):
+            menu.aboutToShow.connect(self._grey_selected_actions)
+            menu.aboutToHide.connect(self._enable_selected_actions)
 
         vm = self.menuBar().addMenu("&View")
         px_action = QAction("Set Pixel Size…", self)
@@ -183,6 +205,7 @@ class MainWindow(QMainWindow):
         ]
         for v in self._views:
             v.set_on_status(self._sb.showMessage)
+            v.set_on_canvas_selected(self.set_selected_export_target)
         self._image_view.set_on_clim_change(self._histogram_view.update_clim_marker)
 
         self._stack = QStackedWidget()
@@ -240,6 +263,7 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
 
     def _show_empty(self, msg: str) -> None:
+        self._reset_selected_export_target()
         self._empty_label.setText(msg)
         self._stack.setCurrentWidget(self._empty_page)
         self._tabs.setVisible(False)
@@ -247,6 +271,7 @@ class MainWindow(QMainWindow):
     def _on_tab_changed(self, index: int) -> None:
         if self._stack.currentWidget() is self._empty_page:
             return
+        self._reset_selected_export_target()
         self._stack.setCurrentIndex(index)
         self._views[index].refresh_status()
 
@@ -441,35 +466,45 @@ class MainWindow(QMainWindow):
             a = self._file_menu.insertMenu(self._quit_action, sub)
             self._export_actions.append(a)
 
-    def _focused_canvas(self) -> ExportableMixin | None:
-        w = QApplication.focusWidget()
-        while w is not None:
-            if isinstance(w, ExportableMixin):
-                return w
-            w = w.parentWidget()
-        return None
+    # ------------------------------------------------------------------
+    # Selected export target — tracks the last-clicked canvas explicitly
+    # so that Cmd+S / Cmd+C work correctly on macOS (focus-widget is
+    # unreliable after clicking menu items or tab labels).
+    # ------------------------------------------------------------------
 
-    def _copy_focused_plot(self) -> None:
-        """Ctrl+C copies the focused canvas; hints if nothing is exportable."""
+    def set_selected_export_target(self, canvas: ExportableMixin) -> None:
+        self._selected_export_target = canvas
+
+    def _reset_selected_export_target(self) -> None:
+        self._selected_export_target = None
+
+    def _grey_selected_actions(self) -> None:
+        has_target = self._selected_export_target is not None
+        self._export_selected_action.setEnabled(has_target)
+        self._copy_selected_action.setEnabled(has_target)
+
+    def _enable_selected_actions(self) -> None:
+        # Re-enable on menu close so the keyboard shortcut keeps firing.
+        self._export_selected_action.setEnabled(True)
+        self._copy_selected_action.setEnabled(True)
+
+    def _export_selected(self) -> None:
         if not self._has_data():
             self._sb.showMessage("No plot loaded — open a file first", 2500)
             return
-        canvas = self._focused_canvas()
-        if canvas is None:
-            self._sb.showMessage(f"Click a plot first, then press {_kbd('Ctrl+C')} to copy", 2500)
-            return
-        canvas._copy_to_clipboard()
-
-    def _export_focused_plot(self) -> None:
-        """Ctrl+S exports the focused canvas; hints if nothing is exportable."""
-        if not self._has_data():
-            self._sb.showMessage("No plot loaded — open a file first", 2500)
-            return
-        canvas = self._focused_canvas()
-        if canvas is None:
+        if self._selected_export_target is None:
             self._sb.showMessage(f"Click a plot first, then press {_kbd('Ctrl+S')} to export", 2500)
             return
-        canvas._export_figure()
+        self._selected_export_target._export_figure()
+
+    def _copy_selected(self) -> None:
+        if not self._has_data():
+            self._sb.showMessage("No plot loaded — open a file first", 2500)
+            return
+        if self._selected_export_target is None:
+            self._sb.showMessage(f"Click a plot first, then press {_kbd('Ctrl+C')} to copy", 2500)
+            return
+        self._selected_export_target._copy_to_clipboard()
 
     def dragEnterEvent(self, ev) -> None:
         urls = ev.mimeData().urls()
