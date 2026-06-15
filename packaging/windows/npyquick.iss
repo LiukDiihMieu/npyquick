@@ -12,7 +12,7 @@
 #define MyAppPublisher "LiukDiihMieu"
 #define MyAppURL "https://github.com/LiukDiihMieu/npyquick"
 #define MyAppExeName "npyquick.exe"
-#define IconPath SourcePath + "npyquick.ico"
+#define IconPath AddBackslash(SourcePath) + "npyquick.ico"
 
 [Setup]
 ; A fixed AppId ties upgrades/uninstall to the same app across versions.
