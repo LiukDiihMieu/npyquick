@@ -7,7 +7,8 @@ from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from PySide6.QtCore import Qt, QSettings
 from PySide6.QtWidgets import (
-    QApplication, QCheckBox, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget,
+    QApplication, QCheckBox, QHBoxLayout, QLabel, QPushButton, QSizePolicy,
+    QVBoxLayout, QWidget,
 )
 
 from ..core import limits
@@ -36,6 +37,7 @@ class LineplotCanvas(ExportableMixin, FigureCanvas):
         self._pan_start_px: tuple | None = None  # pixel coords at pan press
         self._pan_start_xl: tuple | None = None # xlim at pan press
         self._pan_start_yl: tuple | None = None # ylim at pan press
+        self._on_selected: callable = lambda _: None
 
         self.mpl_connect("motion_notify_event", self._on_motion)
         self.mpl_connect("button_press_event", self._on_press)
@@ -189,6 +191,8 @@ class LineplotCanvas(ExportableMixin, FigureCanvas):
         self._on_status(self.status_str())
 
     def _on_press(self, ev) -> None:
+        # Any click anywhere on this canvas selects it as the export target.
+        self._on_selected(self)
         if ev.button == 1 and ev.dblclick:
             self.reset_zoom()
         elif ev.button == 1 and not ev.dblclick and ev.inaxes is self._ax:
@@ -291,6 +295,8 @@ class LineplotView(BaseView):
         self._anomaly_label.setVisible(False)
 
         ctrl = QWidget()
+        # The control row is one line tall; never let it absorb vertical space.
+        ctrl.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         ctrl_layout = QHBoxLayout(ctrl)
         ctrl_layout.setContentsMargins(6, 3, 6, 3)
         ctrl_layout.addWidget(self._log_x_check)
@@ -309,7 +315,7 @@ class LineplotView(BaseView):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
         layout.addWidget(ctrl)
-        layout.addWidget(self._canvas)
+        layout.addWidget(self._canvas, 1)
 
     @classmethod
     def can_handle(cls, array: np.ndarray) -> bool:
@@ -371,6 +377,9 @@ class LineplotView(BaseView):
     def refresh_status(self) -> None:
         s = self._canvas.status_str()
         self._on_status(s if s else self._status)
+
+    def set_on_canvas_selected(self, cb: callable) -> None:
+        self._canvas._on_selected = cb
 
     def export_targets(self):
         return [("Line Plot", self._canvas._export_figure)]

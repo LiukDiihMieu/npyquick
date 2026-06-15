@@ -7,7 +7,8 @@ from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from PySide6.QtCore import Qt, QSettings
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget,
+    QCheckBox, QComboBox, QHBoxLayout, QLabel, QPushButton, QSizePolicy,
+    QVBoxLayout, QWidget,
 )
 
 from ..core import limits
@@ -58,6 +59,7 @@ class HistogramCanvas(ExportableMixin, FigureCanvas):
         self._vline_hi = None
         self._vtext_lo = None
         self._vtext_hi = None
+        self._on_selected: callable = lambda _: None
 
         self.mpl_connect("button_press_event", self._on_press)
         self.mpl_connect("motion_notify_event", self._on_motion)
@@ -158,6 +160,8 @@ class HistogramCanvas(ExportableMixin, FigureCanvas):
         self.draw_idle()
 
     def _on_press(self, ev) -> None:
+        # Any click anywhere on this canvas selects it as the export target.
+        self._on_selected(self)
         if ev.dblclick and ev.inaxes is self._ax:
             self.xlim_full()
 
@@ -245,6 +249,8 @@ class HistogramView(BaseView):
         self._anomaly_label.setVisible(False)
 
         ctrl = QWidget()
+        # The control row is one line tall; never let it absorb vertical space.
+        ctrl.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         ctrl_layout = QHBoxLayout(ctrl)
         ctrl_layout.setContentsMargins(6, 3, 6, 3)
         ctrl_layout.addWidget(QLabel("Bins:"))
@@ -266,7 +272,7 @@ class HistogramView(BaseView):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
         layout.addWidget(ctrl)
-        layout.addWidget(self._canvas)
+        layout.addWidget(self._canvas, 1)
 
     @classmethod
     def can_handle(cls, array: np.ndarray) -> bool:
@@ -323,6 +329,9 @@ class HistogramView(BaseView):
 
     def export_targets(self):
         return [("Histogram", self._canvas._export_figure)]
+
+    def set_on_canvas_selected(self, cb: callable) -> None:
+        self._canvas._on_selected = cb
 
     def set_on_status(self, cb: callable) -> None:
         super().set_on_status(cb)

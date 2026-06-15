@@ -37,3 +37,19 @@ jobs:
         env:
           QT_QPA_PLATFORM: offscreen
         run: pytest
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Build distributions
+        run: |
+          pip install build twine
+          python -m build
+          twine check dist/*

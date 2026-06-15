@@ -7,7 +7,8 @@ from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from PySide6.QtCore import Qt, QSettings
 from PySide6.QtWidgets import (
-    QHBoxLayout, QLabel, QLineEdit, QPushButton, QSplitter, QVBoxLayout, QWidget,
+    QHBoxLayout, QLabel, QLineEdit, QPushButton, QSizePolicy, QSplitter,
+    QVBoxLayout, QWidget,
 )
 
 from ..core import limits
@@ -27,6 +28,8 @@ class ProfileCanvas(ExportableMixin, FigureCanvas):
         self._transform = PixelTransform()
         self._setup_axes()
         self._lines: list = []
+        self._on_selected: callable = lambda _: None
+        self.mpl_connect("button_press_event", self._on_press)
 
     def _setup_axes(self) -> None:
         u = self._transform.format_unit()
@@ -76,6 +79,9 @@ class ProfileCanvas(ExportableMixin, FigureCanvas):
         self._ax.autoscale_view()
         self.draw_idle()
 
+    def _on_press(self, ev) -> None:
+        self._on_selected(self)
+
 
 class ImageCanvas(ExportableMixin, FigureCanvas):
     _HIT_RADIUS = 12
@@ -87,6 +93,7 @@ class ImageCanvas(ExportableMixin, FigureCanvas):
         self._ax = self._fig.add_subplot(111)
         self._profile = profile
         self._on_status: callable = lambda _: None
+        self._on_selected: callable = lambda _: None
         self._data: np.ndarray | None = None      # full resolution (may be a memmap)
         self._disp: np.ndarray | None = None       # float display array (maybe downsampled)
         self._stride: int = 1                      # full-res pixels per display pixel
@@ -293,6 +300,8 @@ class ImageCanvas(ExportableMixin, FigureCanvas):
         self.draw_idle()
 
     def _on_press(self, ev) -> None:
+        # Any click anywhere on this canvas selects it as the export target.
+        self._on_selected(self)
         if ev.inaxes is not self._ax or self._data is None:
             return
         if ev.button == 1:
@@ -449,6 +458,8 @@ class ImageView(BaseView, SpatialView, ColormappedView):
         self._anomaly_label.setVisible(False)
 
         ctrl = QWidget()
+        # The control row is one line tall; never let it absorb vertical space.
+        ctrl.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         ctrl_layout = QHBoxLayout(ctrl)
         ctrl_layout.setContentsMargins(6, 3, 6, 3)
         ctrl_layout.addWidget(QLabel("vmin:"))
@@ -466,7 +477,7 @@ class ImageView(BaseView, SpatialView, ColormappedView):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
         layout.addWidget(ctrl)
-        layout.addWidget(sp)
+        layout.addWidget(sp, 1)
 
     @classmethod
     def can_handle(cls, array: np.ndarray) -> bool:
@@ -515,6 +526,10 @@ class ImageView(BaseView, SpatialView, ColormappedView):
     def set_on_status(self, cb: callable) -> None:
         super().set_on_status(cb)
         self._canvas.set_on_status(cb)
+
+    def set_on_canvas_selected(self, cb: callable) -> None:
+        self._canvas._on_selected = cb
+        self._profile._on_selected = cb
 
     def refresh_status(self) -> None:
         self._on_status(self._canvas.status_str())

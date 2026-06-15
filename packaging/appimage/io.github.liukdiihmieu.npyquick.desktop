@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=npyquick
+GenericName=NumPy Array Viewer
+Comment=Quick viewer for NumPy .npy and .npz files
+Exec=npyquick %f
+Icon=io.github.liukdiihmieu.npyquick
+Terminal=false
+Categories=Science;Utility;
+MimeType=application/x-npy;application/x-npz;
+Keywords=numpy;npy;npz;array;viewer;
+StartupNotify=true

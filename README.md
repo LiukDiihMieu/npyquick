@@ -1,27 +1,61 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo-horizontal-dark.svg">
-    <source media="(prefers-color-scheme: light)" srcset="docs/assets/logo-horizontal-light.svg">
-    <img alt="npyquick logo" src="docs/assets/logo-horizontal-light.svg" width="400">
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/LiukDiihMieu/npyquick/main/docs/assets/logo-horizontal-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/LiukDiihMieu/npyquick/main/docs/assets/logo-horizontal-light.svg">
+    <img alt="npyquick logo" src="https://raw.githubusercontent.com/LiukDiihMieu/npyquick/main/docs/assets/logo-horizontal-light.svg" width="400">
   </picture>
 </p>
 
-A fast, lightweight GUI viewer for NumPy arrays (`.npy` / `.npz`), built with PySide6 and Matplotlib.
+<p align="center">
+  <a href="https://pypi.org/project/npyquick/"><img alt="PyPI version" src="https://img.shields.io/pypi/v/npyquick"></a>
+  <a href="https://pypi.org/project/npyquick/"><img alt="Python versions" src="https://img.shields.io/pypi/pyversions/npyquick"></a>
+  <a href="LICENSE"><img alt="License" src="https://img.shields.io/github/license/LiukDiihMieu/npyquick"></a>
+</p>
+
+## Why npyquick?
+
+Researchers often need to quickly inspect .npy and .npz files without writing a notebook, launching an IDE, or remembering the array shape in advance.
+
+npyquick is designed as a small, practical viewer for this job:
+
+* open NumPy array files directly from the terminal or file manager
+* inspect common scientific data layouts immediately
+* stay lightweight and easy to understand
+* avoid turning a simple array viewer into a full image-processing application
+
+<video src="https://github.com/user-attachments/assets/678de9e3-45c3-4b20-ba3a-f8350ad4d89d" autoplay loop muted playsinline width="800"></video>
 
 ## Installation
 
-**With conda (recommended):**
+**Linux (AppImage):**
+
+On x86-64 Linux, AppImage is available for one-click installation. Download `npyquick-x86_64.AppImage` from the [latest release](https://github.com/LiukDiihMieu/npyquick/releases/latest), then:
+
+```bash
+chmod +x npyquick-x86_64.AppImage
+./npyquick-x86_64.AppImage path/to/file.npy
+```
+
+To open `.npy` / `.npz` by double-clicking in your file manager, register the default handler once with `./npyquick-x86_64.AppImage --install-desktop` (details in [Linux desktop integration](#linux-desktop-integration)). If you integrate the AppImage with a tool like [AppImageLauncher](https://github.com/TheAssassin/AppImageLauncher), this association is set up for you automatically.
+
+**Windows:**
+
+Download the `npyquick-<version>-setup.exe` installer from the [latest release](https://github.com/LiukDiihMieu/npyquick/releases/latest) and run it. It installs per-user (no administrator rights needed) and adds a Start Menu shortcut. To open `.npy` / `.npz` by double-clicking, tick *Associate .npy and .npz files with npyquick* during setup.
+
+The Windows build is currently unsigned, so the first run may show a SmartScreen prompt. Download only from the official GitHub Releases page; after confirming the file name and source, choose *More info → Run anyway*.
+
+**With pip:**
+```bash
+pip install npyquick
+```
+
+**With conda:**
 ```bash
 conda env create -f environment.yml
 conda activate npyquick
 ```
 
-**With pip only:**
-```bash
-pip install -e .
-```
-
-Dependencies: Python ≥ 3.10, NumPy, SciPy, Matplotlib, PySide6.
+The pip and conda installs need Python ≥ 3.10, NumPy, SciPy, Matplotlib, and PySide6.
 
 ## Usage
 
@@ -31,112 +65,95 @@ npyquick path/to/file.npy       # open with a file
 npyquick path/to/file.npz       # open a multi-array archive
 ```
 
-Files can also be opened via **File › Open** (Ctrl+O) or by dragging and dropping onto the window.
+Files can be opened via **File › Open** (`Ctrl+O`) or by **dragging and dropping** onto the window.
 
 ## Features
 
 ### Image view
-Displays 2D and RGB arrays as an interactive image.
 
-**Supported formats:**
-- 2D numeric arrays — any dtype (float32/64, uint8/16, int16/32, …)
-- `(H, W, 3)` RGB arrays — uint8, uint16, and float32/64
+Preview 2D grayscale arrays and RGB arrays with interactive zoom, pan, colormap control, brightness adjustment, and a draggable cross-section profile.
 
-**Normalization (RGB only):** uint8 is displayed directly in [0, 255] with no scaling; other integer types are scaled by their dtype maximum (e.g. uint16 ÷ 65535); float arrays outside [0, 1] are globally min-max stretched. The applied strategy is shown in the control bar.
-
-**Interactions:**
-- Scroll to zoom, left-drag to pan, double-click to reset zoom
-- Two draggable endpoints define a cross-section line; the live intensity profile is shown in a side panel
-- Colormap selector (**View › Colormap**) for grayscale images: gray, viridis, plasma, inferno, magma, cividis, hot, coolwarm, RdBu, turbo
-- Manual brightness range via vmin / vmax inputs
+![Image view of an RGB array](https://raw.githubusercontent.com/LiukDiihMieu/npyquick/main/docs/assets/screenshot-rgb.png)
 
 ### Histogram view
-Shows the value distribution of any real numeric array (1D, 2D, RGB, or higher-dimensional). NaN/Inf values are excluded and reported separately.
 
-**Controls:**
-- Bin count selector: auto, 64, 128, 256, 512
-- Log-scale toggle for the count axis
-- X-range buttons: **Full** (entire data extent) and **Robust** (p2–p98), plus scroll-to-zoom on the x-axis
-- Summary line with min, max, mean, std and the p1 / p50 / p99 percentiles
-- Anomaly count (NaN / Inf) highlighted in red when present
+Inspect value distributions with linear or log-scaled counts, robust range selection, summary statistics, and NaN / Inf reporting.
 
-**Interactions:**
-- Hover over a bar to read its `[lo, hi)` range and count in the status bar
-- When a 2D image is loaded, the image's current vmin / vmax appear as labelled dashed markers, kept in sync with the Image view's brightness range
+![Histogram view](https://raw.githubusercontent.com/LiukDiihMieu/npyquick/main/docs/assets/screenshot-hist.png)
 
 ### Line Plot view
-Displays 1D signals and paired (x, y) datasets as an interactive line plot.
 
-**Supported formats:**
-- `(N,)` real numeric arrays — x axis is the element index
-- `(2, N)` real numeric arrays with N > 2 — row 0 as x values, row 1 as y values
-- `(N, 2)` real numeric arrays with N > 2 — column 0 as x values, column 1 as y values
+Display 1D signals and paired `(x, y)` arrays with interactive zoom, pan, reset, and optional log-scaled axes.
 
-For `(2, N)` and `(N, 2)` arrays the x axis uses the raw values stored in the data; physical units and spacing are the user's responsibility.
-
-**Interactions:**
-- Scroll to zoom x axis, **Shift + scroll** to zoom y axis, both centred on the cursor
-- Left-drag to pan both axes freely
-- Double-click to reset zoom (restores matplotlib's default 5 % margin on both axes)
-
-**Controls:**
-- **Log X / Log Y** checkboxes — switches each axis to logarithmic scale; automatically disabled when the data has no positive values
-- **Reset** button — resets zoom to show all data
-
-Large arrays are downsampled for display (budget: 1 M points); the original data is always used for hover readout (status bar shows index or x value, and y value).
+![Line plot view](https://raw.githubusercontent.com/LiukDiihMieu/npyquick/main/docs/assets/screenshot-line.png)
 
 ### Table view
-Fallback for any array shape or dtype that the image view cannot display (1D, >2D, non-numeric, empty, scalar, complex). Rows and columns are capped at 10 000 to keep large arrays usable.
 
-### .npz support
-When a `.npz` archive contains multiple arrays, a dropdown appears above the tabs listing each key with its shape and dtype. Switching the selection immediately reloads the active view.
+Fallback preview for arrays that are not naturally displayed as images or line plots, including higher-dimensional, complex, object, scalar, or empty arrays.
+
+![Table view](https://raw.githubusercontent.com/LiukDiihMieu/npyquick/main/docs/assets/screenshot-table.png)
+
+### `.npz` archives
+
+When a `.npz` archive contains multiple arrays, npyquick shows a key selector with each array's name, shape, and dtype. Switching the selected key reloads the active view.
+
+![Open an .npz archive](https://raw.githubusercontent.com/LiukDiihMieu/npyquick/main/docs/assets/screenshot-npz.png)
+
+For detailed display rules, normalization behavior, downsampling, and performance limits, see [Display behavior](docs/behavior.md).
+
+## Keyboard shortcuts
+
+| Shortcut         | Action                         |
+| ---------------- | ------------------------------ |
+| `Ctrl+O`         | Open file                      |
+| `Ctrl+S`         | Export current figure          |
+| `Ctrl+C`         | Copy current figure            |
+| `Ctrl+Q`         | Quit                           |
+| `F5` / `Ctrl+R`  | Reload current file            |
+| `Ctrl+Tab`       | Switch to next enabled tab     |
+| `Ctrl+Shift+Tab` | Switch to previous enabled tab |
 
 ## Linux desktop integration
 
-You can register npyquick as an "Open With" application for `.npy` and `.npz`
-files on Linux desktops that follow the freedesktop.org desktop entry and MIME
-standards. This includes common desktop environments such as GNOME, KDE Plasma,
-XFCE, Cinnamon, and MATE. It is not Ubuntu-specific, but exact file-manager
-menus may vary by distribution and desktop environment.
-
-This setup assumes npyquick is already installed in a working environment and
-can open files from the command line:
+Register npyquick as the handler for `.npy` / `.npz` files so you can double-click them in your file manager, or right-click → Open With:
 
 ```bash
-npyquick path/to/file.npy
-npyquick path/to/file.npz
+npyquick --install-desktop
 ```
 
-First, find the absolute path to the executable:
+This installs a `.desktop` entry, the `.npy` / `.npz` MIME types, and the app icon under `~/.local/share` (user-level, no root). Then double-click a file, or test from the terminal:
 
 ```bash
-which npyquick
+xdg-open path/to/file.npy
 ```
 
-For a conda environment, this may look like:
+To remove it:
 
 ```bash
-/opt/miniconda3/envs/npyquick/bin/npyquick
+npyquick --uninstall-desktop
 ```
 
-Create `~/.local/share/applications/npyquick.desktop` and replace the `Exec=`
-path with the path reported by `which npyquick`:
+Works on desktops that follow the freedesktop.org desktop-entry and MIME standards (GNOME, KDE Plasma, XFCE, Cinnamon, MATE). Some environments only show the new association after the file manager restarts or you log out and back in.
+
+<details>
+<summary>Manual setup (without the CLI command)</summary>
+
+Create `~/.local/share/applications/io.github.liukdiihmieu.npyquick.desktop`, replacing the `Exec=` path with the output of `which npyquick`:
 
 ```ini
 [Desktop Entry]
 Type=Application
 Name=npyquick
 Comment=Open NumPy array files
-Exec=/opt/miniconda3/envs/npyquick/bin/npyquick %f
-Icon=utilities-terminal
+Exec=/path/to/npyquick %f
+Icon=io.github.liukdiihmieu.npyquick
 Terminal=false
 Categories=Science;Utility;
 MimeType=application/x-npy;application/x-npz;
 StartupNotify=true
 ```
 
-Register MIME types for `.npy` and `.npz` by creating
-`~/.local/share/mime/packages/npyquick.xml`:
+Register the MIME types by creating `~/.local/share/mime/packages/npyquick.xml`:
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -153,34 +170,29 @@ Register MIME types for `.npy` and `.npz` by creating
 </mime-info>
 ```
 
-The high glob weight is important for `.npz`: because an `.npz` file is a ZIP
-container internally, some desktops otherwise classify it as `application/zip`
-before the extension-specific rule is applied.
+The `sub-class-of` and high glob weight matter for `.npz`: it is a ZIP container internally, so without them some desktops classify it as `application/zip` before the extension rule applies.
 
-Update the desktop and MIME databases, then set npyquick as the default handler:
+Then update the databases and set the default handler:
 
 ```bash
 update-mime-database ~/.local/share/mime
 update-desktop-database ~/.local/share/applications
-xdg-mime default npyquick.desktop application/x-npy
-xdg-mime default npyquick.desktop application/x-npz
+xdg-mime default io.github.liukdiihmieu.npyquick.desktop application/x-npy
+xdg-mime default io.github.liukdiihmieu.npyquick.desktop application/x-npz
 ```
+</details>
 
-Test the association:
 
-```bash
-xdg-open path/to/file.npy
-xdg-open path/to/file.npz
-```
-
-After this, most Linux file managers should show npyquick in the "Open With"
-menu for `.npy` and `.npz` files. Some desktop environments may require
-restarting the file manager or logging out and back in before the menu updates.
-
-## TODO
+## Roadmap
 
 - [ ] `>2D` array slicer
-- [ ] Complex array support (real / imaginary / magnitude / phase)
+- [ ] Complex array support: real / imaginary / magnitude / phase
+
+## Contributing
+
+Bug reports, feature requests, and suggestions are welcome — please open an [issue](https://github.com/LiukDiihMieu/npyquick/issues).
+
+> The code in this repository is primarily written by an AI coding agent and reviewed by a human maintainer.
 
 ## License
 
