@@ -27,6 +27,12 @@ PrivilegesRequired=lowest
 DefaultDirName={localappdata}\Programs\{#MyAppName}
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
+; Refresh the shell's file associations after install AND uninstall (official
+; SHCNE_ASSOCCHANGED mechanism), so the .npy/.npz association applies without
+; a re-login.
+ChangesAssociations=yes
+; Show the GPL on a license page during setup.
+LicenseFile=..\..\LICENSE
 OutputDir=..\..\dist
 OutputBaseFilename=npyquick-{#MyAppVersion}-setup
 Compression=lzma2
@@ -47,6 +53,8 @@ Name: "associate"; Description: "Associate .npy and .npz files with {#MyAppName}
 [Files]
 ; The PyInstaller onedir tree (npyquick.exe + _internal\...).
 Source: "..\..\dist\npyquick\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
+; Ship the GPL text alongside the installed app.
+Source: "..\..\LICENSE"; DestDir: "{app}"; DestName: "LICENSE.txt"; Flags: ignoreversion
 
 [Icons]
 ; Shortcuts inherit the icon embedded in the .exe by PyInstaller.
@@ -73,18 +81,3 @@ Root: HKCU; Subkey: "Software\Classes\.npz\OpenWithProgids"; ValueType: string; 
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName}"; Flags: nowait postinstall skipifsilent
-
-[Code]
-const
-  SHCNE_ASSOCCHANGED = $08000000;
-  SHCNF_IDLIST = $0;
-
-procedure SHChangeNotify(wEventId: Integer; uFlags: Cardinal; dwItem1, dwItem2: Cardinal);
-  external 'SHChangeNotify@shell32.dll stdcall';
-
-procedure CurStepChanged(CurStep: TSetupStep);
-begin
-  // Tell Explorer to pick up association changes without a re-login.
-  if CurStep = ssPostInstall then
-    SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, 0, 0);
-end;
