@@ -7,7 +7,7 @@ from matplotlib.figure import Figure
 from PySide6.QtCore import Qt, QSettings, QUrl
 from PySide6.QtWidgets import (
     QFileDialog, QHBoxLayout, QLabel, QLineEdit,
-    QPushButton, QSplitter, QStackedWidget, QVBoxLayout, QWidget,
+    QPushButton, QSizePolicy, QSplitter, QStackedWidget, QVBoxLayout, QWidget,
 )
 
 from ..core import limits
@@ -34,6 +34,8 @@ class DualProfileCanvas(ExportableMixin, FigureCanvas):
         self._setup_axes()
         self._lines: list = []
         self._n_profiles = 0
+        self._on_selected: callable = lambda _: None
+        self.mpl_connect("button_press_event", lambda ev: self._on_selected(self))
 
     def _setup_axes(self) -> None:
         u = _fmt_unit(self._unit) if hasattr(self, "_unit") else ""
@@ -111,6 +113,7 @@ class DualImageCanvas(ExportableMixin, FigureCanvas):
         self._im = None
         self._transform = PixelTransform()
 
+        self._on_selected: callable = lambda _: None
         self.mpl_connect("button_press_event", self._on_press)
         self.mpl_connect("motion_notify_event", self._on_motion)
         self.mpl_connect("button_release_event", self._on_release)
@@ -296,6 +299,7 @@ class DualImageCanvas(ExportableMixin, FigureCanvas):
         self.draw_idle()
 
     def _on_press(self, ev) -> None:
+        self._on_selected(self)
         if ev.inaxes is not self._ax or self._data is None:
             return
         if ev.button == 1:
@@ -432,7 +436,7 @@ class DualImageView(BaseView, SpatialView, ColormappedView):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
         layout.addWidget(self._build_controls())
-        layout.addWidget(splitter)
+        layout.addWidget(splitter, 1)
 
     # ------------------------------------------------------------------
     # Control bar
@@ -527,6 +531,7 @@ class DualImageView(BaseView, SpatialView, ColormappedView):
         r2.addStretch()
 
         ctrl = QWidget()
+        ctrl.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         cl = QVBoxLayout(ctrl)
         cl.setContentsMargins(0, 0, 0, 0)
         cl.setSpacing(0)
@@ -776,6 +781,12 @@ class DualImageView(BaseView, SpatialView, ColormappedView):
 
     def refresh_status(self) -> None:
         self._on_status("Compare — drag or open two 2D arrays of the same shape")
+
+    def set_on_canvas_selected(self, cb: callable) -> None:
+        self._canvas1._on_selected = cb
+        self._canvas2._on_selected = cb
+        self._diff_canvas._on_selected = cb
+        self._profile._on_selected = cb
 
     def export_targets(self):
         targets = [
