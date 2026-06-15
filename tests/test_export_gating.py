@@ -9,7 +9,7 @@ import numpy as np
 
 
 def _export_plot_action_state(w):
-    """Return (text, enabled) for the synthesised Export Plot menu entry."""
+    """Return (text, enabled) for the dynamic Export Plot menu entry."""
     w._rebuild_export_menu()
     acts = [a for a in w._export_actions if a.text()]
     assert len(acts) == 1, f"expected one Export Plot action, got {[a.text() for a in acts]}"
@@ -30,14 +30,39 @@ def test_export_menu_disabled_at_startup(main_window):
     assert enabled is False
 
 
-def test_copy_shortcut_hints_when_no_data(main_window):
-    main_window._copy_focused_plot()
-    assert "No plot loaded" in main_window._sb.currentMessage()
+def test_copy_shortcut_hints_when_no_target(main_window):
+    main_window._copy_selected()
+    assert "Click a plot first" in main_window._sb.currentMessage()
 
 
-def test_export_shortcut_hints_when_no_data(main_window):
-    main_window._export_focused_plot()
-    assert "No plot loaded" in main_window._sb.currentMessage()
+def test_export_shortcut_hints_when_no_target(main_window):
+    main_window._export_selected()
+    assert "Click a plot first" in main_window._sb.currentMessage()
+
+
+def test_selected_actions_present_at_startup(main_window):
+    # Always present/enabled so the shortcut fires and can show the hint.
+    assert main_window._export_selected_action.text() == "Export Selected Plot"
+    assert main_window._copy_selected_action.text() == "Copy Selected Plot"
+
+
+def test_selected_actions_grey_when_no_target_then_reenable(main_window):
+    # Menu opening greys them out when nothing is selected...
+    main_window._grey_selected_actions()
+    assert main_window._export_selected_action.isEnabled() is False
+    assert main_window._copy_selected_action.isEnabled() is False
+    # ...and menu closing re-enables so the shortcut keeps firing (-> hint).
+    main_window._enable_selected_actions()
+    assert main_window._export_selected_action.isEnabled() is True
+    assert main_window._copy_selected_action.isEnabled() is True
+
+
+def test_selected_actions_stay_enabled_when_target_set(main_window, write_npy):
+    main_window.load_file(write_npy(np.arange(64, dtype=np.float32).reshape(8, 8)))
+    main_window.set_selected_export_target(main_window._image_view._canvas)
+    main_window._grey_selected_actions()
+    assert main_window._export_selected_action.isEnabled() is True
+    assert main_window._copy_selected_action.isEnabled() is True
 
 
 def test_right_click_suppressed_when_no_data(main_window):
@@ -49,7 +74,7 @@ def test_right_click_suppressed_when_no_data(main_window):
 
 
 # ---------------------------------------------------------------------------
-# After loading a .npy: gates open
+# After loading a .npy: Export Plot gate opens
 # ---------------------------------------------------------------------------
 
 def test_export_menu_enabled_after_loading_npy(main_window, write_npy):
@@ -58,8 +83,17 @@ def test_export_menu_enabled_after_loading_npy(main_window, write_npy):
     assert main_window._has_data() is True
     main_window._rebuild_export_menu()
     acts = [a for a in main_window._export_actions if a.text()]
-    enabled_action = [a for a in acts if a.isEnabled()]
-    assert enabled_action, "Export Plot should be enabled once data is loaded"
+    assert any(a.isEnabled() for a in acts), "Export Plot should be enabled once data is loaded"
+
+
+def test_selected_target_drives_export(main_window, write_npy, monkeypatch):
+    main_window.load_file(write_npy(np.arange(64, dtype=np.float32).reshape(8, 8)))
+    canvas = main_window._image_view._canvas
+    called = []
+    monkeypatch.setattr(canvas, "_export_figure", lambda: called.append(True))
+    main_window.set_selected_export_target(canvas)
+    main_window._export_selected()
+    assert called == [True]
 
 
 # ---------------------------------------------------------------------------

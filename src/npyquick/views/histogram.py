@@ -59,6 +59,7 @@ class HistogramCanvas(ExportableMixin, FigureCanvas):
         self._vline_hi = None
         self._vtext_lo = None
         self._vtext_hi = None
+        self._on_selected: callable = lambda _: None
 
         self.mpl_connect("button_press_event", self._on_press)
         self.mpl_connect("motion_notify_event", self._on_motion)
@@ -159,6 +160,8 @@ class HistogramCanvas(ExportableMixin, FigureCanvas):
         self.draw_idle()
 
     def _on_press(self, ev) -> None:
+        if self._edges is not None:
+            self._on_selected(self)
         if ev.dblclick and ev.inaxes is self._ax:
             self.xlim_full()
 
@@ -326,6 +329,9 @@ class HistogramView(BaseView):
 
     def export_targets(self):
         return [("Histogram", self._canvas._export_figure)]
+
+    def set_on_canvas_selected(self, cb: callable) -> None:
+        self._canvas._on_selected = cb
 
     def set_on_status(self, cb: callable) -> None:
         super().set_on_status(cb)
