@@ -160,8 +160,8 @@ class HistogramCanvas(ExportableMixin, FigureCanvas):
         self.draw_idle()
 
     def _on_press(self, ev) -> None:
-        if self._edges is not None:
-            self._on_selected(self)
+        # Any click anywhere on this canvas selects it as the export target.
+        self._on_selected(self)
         if ev.dblclick and ev.inaxes is self._ax:
             self.xlim_full()
 

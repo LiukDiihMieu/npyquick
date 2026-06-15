@@ -191,8 +191,8 @@ class LineplotCanvas(ExportableMixin, FigureCanvas):
         self._on_status(self.status_str())
 
     def _on_press(self, ev) -> None:
-        if ev.inaxes is self._ax and self._x_disp is not None:
-            self._on_selected(self)
+        # Any click anywhere on this canvas selects it as the export target.
+        self._on_selected(self)
         if ev.button == 1 and ev.dblclick:
             self.reset_zoom()
         elif ev.button == 1 and not ev.dblclick and ev.inaxes is self._ax:

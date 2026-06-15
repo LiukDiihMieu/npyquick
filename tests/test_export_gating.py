@@ -30,19 +30,26 @@ def test_export_menu_disabled_at_startup(main_window):
     assert enabled is False
 
 
-def test_copy_shortcut_hints_when_no_target(main_window):
+def test_copy_shortcut_hints_when_no_data(main_window):
     main_window._copy_selected()
-    assert "Click a plot first" in main_window._sb.currentMessage()
+    assert "No plot loaded" in main_window._sb.currentMessage()
 
 
-def test_export_shortcut_hints_when_no_target(main_window):
+def test_export_shortcut_hints_when_no_data(main_window):
     main_window._export_selected()
+    assert "No plot loaded" in main_window._sb.currentMessage()
+
+
+def test_copy_hints_to_click_when_data_but_no_target(main_window, write_npy):
+    main_window.load_file(write_npy(np.arange(64, dtype=np.float32).reshape(8, 8)))
+    main_window._reset_selected_export_target()
+    main_window._copy_selected()
     assert "Click a plot first" in main_window._sb.currentMessage()
 
 
 def test_selected_actions_present_at_startup(main_window):
     # Always present/enabled so the shortcut fires and can show the hint.
-    assert main_window._export_selected_action.text() == "Export Selected Plot"
+    assert main_window._export_selected_action.text() == "Export Selected Plot…"
     assert main_window._copy_selected_action.text() == "Copy Selected Plot"
 
 

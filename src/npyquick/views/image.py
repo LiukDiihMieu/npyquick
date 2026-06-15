@@ -300,9 +300,10 @@ class ImageCanvas(ExportableMixin, FigureCanvas):
         self.draw_idle()
 
     def _on_press(self, ev) -> None:
+        # Any click anywhere on this canvas selects it as the export target.
+        self._on_selected(self)
         if ev.inaxes is not self._ax or self._data is None:
             return
-        self._on_selected(self)
         if ev.button == 1:
             if ev.dblclick:
                 self._reset_zoom()

@@ -115,7 +115,7 @@ class MainWindow(QMainWindow):
         # QAction (not QShortcut) so Qt routes the shortcut through the menu-bar
         # system, which works on macOS regardless of which canvas holds focus.
         # Fixed label; targets the last-clicked canvas (set via _on_press).
-        export_sel_a = QAction("Export Selected Plot", self)
+        export_sel_a = QAction("Export Selected Plot…", self)
         export_sel_a.setShortcut(QKeySequence.StandardKey.Save)
         export_sel_a.triggered.connect(self._export_selected)
         fm.addAction(export_sel_a)
@@ -489,12 +489,18 @@ class MainWindow(QMainWindow):
         self._copy_selected_action.setEnabled(True)
 
     def _export_selected(self) -> None:
+        if not self._has_data():
+            self._sb.showMessage("No plot loaded — open a file first", 2500)
+            return
         if self._selected_export_target is None:
             self._sb.showMessage(f"Click a plot first, then press {_kbd('Ctrl+S')} to export", 2500)
             return
         self._selected_export_target._export_figure()
 
     def _copy_selected(self) -> None:
+        if not self._has_data():
+            self._sb.showMessage("No plot loaded — open a file first", 2500)
+            return
         if self._selected_export_target is None:
             self._sb.showMessage(f"Click a plot first, then press {_kbd('Ctrl+C')} to copy", 2500)
             return
