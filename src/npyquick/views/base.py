@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 import os
 import re
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -97,12 +98,12 @@ class BaseView(QWidget):
 
     def __init__(self) -> None:
         super().__init__()
-        self._on_status: callable = lambda _: None
+        self._on_status: Callable = lambda _: None
 
-    def set_on_status(self, cb: callable) -> None:
+    def set_on_status(self, cb: Callable) -> None:
         self._on_status = cb
 
-    def set_on_canvas_selected(self, cb: callable) -> None:
+    def set_on_canvas_selected(self, cb: Callable) -> None:
         pass
 
     def refresh_status(self) -> None:
@@ -115,6 +116,6 @@ class BaseView(QWidget):
     def set_data(self, array: np.ndarray, stats: ArrayStats | None = None) -> None:
         raise NotImplementedError
 
-    def export_targets(self) -> list[tuple[str, callable]]:
+    def export_targets(self) -> list[tuple[str, Callable]]:
         """Return [(panel_name, export_fn), …] for File › Export Plot menu."""
         return []

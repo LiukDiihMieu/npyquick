@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import numpy as np
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
@@ -28,7 +30,7 @@ class ProfileCanvas(ExportableMixin, FigureCanvas):
         self._transform = PixelTransform()
         self._setup_axes()
         self._lines: list = []
-        self._on_selected: callable = lambda _: None
+        self._on_selected: Callable = lambda _: None
         self.mpl_connect("button_press_event", self._on_press)
 
     def _setup_axes(self) -> None:
@@ -92,8 +94,8 @@ class ImageCanvas(ExportableMixin, FigureCanvas):
         super().__init__(self._fig)
         self._ax = self._fig.add_subplot(111)
         self._profile = profile
-        self._on_status: callable = lambda _: None
-        self._on_selected: callable = lambda _: None
+        self._on_status: Callable = lambda _: None
+        self._on_selected: Callable = lambda _: None
         self._data: np.ndarray | None = None      # full resolution (may be a memmap)
         self._disp: np.ndarray | None = None       # float display array (maybe downsampled)
         self._stride: int = 1                      # full-res pixels per display pixel
@@ -113,7 +115,7 @@ class ImageCanvas(ExportableMixin, FigureCanvas):
         self.mpl_connect("scroll_event", self._on_scroll)
         self.mpl_connect("axes_leave_event", self._on_axes_leave)
 
-    def set_on_status(self, cb: callable) -> None:
+    def set_on_status(self, cb: Callable) -> None:
         self._on_status = cb
 
     def load(self, data: np.ndarray) -> tuple[str | None, str | None]:
@@ -420,7 +422,7 @@ class ImageView(BaseView, SpatialView, ColormappedView):
 
     def __init__(self) -> None:
         super().__init__()
-        self._on_clim_change: callable = lambda vmin, vmax: None
+        self._on_clim_change: Callable = lambda vmin, vmax: None
         self._profile = ProfileCanvas()
         self._canvas = ImageCanvas(self._profile)
 
@@ -523,11 +525,11 @@ class ImageView(BaseView, SpatialView, ColormappedView):
     def set_colormap(self, name: str) -> None:
         self._canvas.set_colormap(name)
 
-    def set_on_status(self, cb: callable) -> None:
+    def set_on_status(self, cb: Callable) -> None:
         super().set_on_status(cb)
         self._canvas.set_on_status(cb)
 
-    def set_on_canvas_selected(self, cb: callable) -> None:
+    def set_on_canvas_selected(self, cb: Callable) -> None:
         self._canvas._on_selected = cb
         self._profile._on_selected = cb
 
@@ -538,7 +540,7 @@ class ImageView(BaseView, SpatialView, ColormappedView):
         return [("Image", self._canvas._export_figure),
                 ("Profile", self._profile._export_figure)]
 
-    def set_on_clim_change(self, cb: callable) -> None:
+    def set_on_clim_change(self, cb: Callable) -> None:
         self._on_clim_change = cb
 
     def get_clim(self) -> tuple[float | None, float | None]:

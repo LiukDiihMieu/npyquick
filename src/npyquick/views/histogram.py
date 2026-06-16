@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import numpy as np
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
@@ -49,7 +51,7 @@ class HistogramCanvas(ExportableMixin, FigureCanvas):
         self._fig = Figure(constrained_layout=True)
         super().__init__(self._fig)
         self._ax = self._fig.add_subplot(111)
-        self._on_status: callable = lambda _: None
+        self._on_status: Callable = lambda _: None
         self._idle_status: str = ""
         self._n_bins: int | str = "auto"
         self._log: bool = False
@@ -64,14 +66,14 @@ class HistogramCanvas(ExportableMixin, FigureCanvas):
         self._vline_hi = None
         self._vtext_lo = None
         self._vtext_hi = None
-        self._on_selected: callable = lambda _: None
+        self._on_selected: Callable = lambda _: None
 
         self.mpl_connect("button_press_event", self._on_press)
         self.mpl_connect("motion_notify_event", self._on_motion)
         self.mpl_connect("axes_leave_event", self._on_axes_leave)
         self.mpl_connect("scroll_event", self._on_scroll)
 
-    def set_on_status(self, cb: callable) -> None:
+    def set_on_status(self, cb: Callable) -> None:
         self._on_status = cb
 
     def set_idle_status(self, s: str) -> None:
@@ -335,10 +337,10 @@ class HistogramView(BaseView):
     def export_targets(self):
         return [("Histogram", self._canvas._export_figure)]
 
-    def set_on_canvas_selected(self, cb: callable) -> None:
+    def set_on_canvas_selected(self, cb: Callable) -> None:
         self._canvas._on_selected = cb
 
-    def set_on_status(self, cb: callable) -> None:
+    def set_on_status(self, cb: Callable) -> None:
         super().set_on_status(cb)
         self._canvas.set_on_status(cb)
 

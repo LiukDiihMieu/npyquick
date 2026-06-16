@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import numpy as np
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
@@ -18,7 +20,7 @@ from .base import BaseView, ExportableMixin
 
 class LineplotCanvas(ExportableMixin, FigureCanvas):
     panel_name = "Line Plot"
-    def __init__(self, on_status: callable) -> None:
+    def __init__(self, on_status: Callable) -> None:
         self._fig = Figure(constrained_layout=True)
         self._ax = self._fig.add_subplot(111)
         super().__init__(self._fig)
@@ -37,7 +39,7 @@ class LineplotCanvas(ExportableMixin, FigureCanvas):
         self._pan_start_px: tuple | None = None  # pixel coords at pan press
         self._pan_start_xl: tuple | None = None # xlim at pan press
         self._pan_start_yl: tuple | None = None # ylim at pan press
-        self._on_selected: callable = lambda _: None
+        self._on_selected: Callable = lambda _: None
 
         self.mpl_connect("motion_notify_event", self._on_motion)
         self.mpl_connect("button_press_event", self._on_press)
@@ -378,7 +380,7 @@ class LineplotView(BaseView):
         s = self._canvas.status_str()
         self._on_status(s if s else self._status)
 
-    def set_on_canvas_selected(self, cb: callable) -> None:
+    def set_on_canvas_selected(self, cb: Callable) -> None:
         self._canvas._on_selected = cb
 
     def export_targets(self):
