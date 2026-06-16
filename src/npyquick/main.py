@@ -5,10 +5,10 @@ from __future__ import annotations
 
 import argparse
 import sys
-from importlib.metadata import version
 
 from PySide6.QtWidgets import QApplication
 
+from npyquick import __version__
 from npyquick.app import MainWindow
 
 
@@ -17,7 +17,7 @@ def main() -> None:
         description="npyquick — a fast, lightweight viewer for NumPy arrays (.npy / .npz)"
     )
     parser.add_argument(
-        "-v", "--version", action="version", version=f"%(prog)s {version('npyquick')}"
+        "-v", "--version", action="version", version=f"%(prog)s {__version__}"
     )
     parser.add_argument(
         "--install-desktop", action="store_true",
