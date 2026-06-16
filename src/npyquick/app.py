@@ -41,6 +41,19 @@ def _kbd(seq: str) -> str:
     return QKeySequence(seq).toString(QKeySequence.NativeText)
 
 
+def _apply_canvas_theme() -> None:
+    # Qt themes the window chrome in dark mode, but matplotlib figures stay white
+    # and glare against it (issue #19). When the OS reports a dark color scheme
+    # (Qt 6.5+ styleHints), switch to matplotlib's built-in "dark_background"
+    # style so the canvas turns dark too. Unknown (some platforms don't report a
+    # scheme) is treated as light, keeping the default canvas. Must run before
+    # any Figure is constructed, so _build_central() calls it first.
+    if QApplication.instance().styleHints().colorScheme() != Qt.ColorScheme.Dark:
+        return
+    import matplotlib.pyplot as plt
+    plt.style.use("dark_background")
+
+
 def _format_array_summary(array: np.ndarray, stats: ArrayStats | None = None) -> str:
     parts = [f"shape {array.shape}", f"dtype {array.dtype}"]
     if array.size == 0:
@@ -190,6 +203,7 @@ class MainWindow(QMainWindow):
         )
 
     def _build_central(self) -> None:
+        _apply_canvas_theme()  # before any view constructs its matplotlib Figure
         self._image_view = ImageView()
         self._lineplot_view = LineplotView()
         self._table_view = RawTableView()
