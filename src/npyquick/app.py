@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import os
-from importlib.metadata import PackageNotFoundError, version
 
 import numpy as np
 from PySide6.QtCore import Qt, QSettings, QUrl
@@ -24,6 +23,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from . import __version__
 from .core.stats import ArrayStats, array_stats
 from .model import NpyDataModel
 from .views.base import ColormappedView, ExportableMixin, SpatialView
@@ -179,14 +179,10 @@ class MainWindow(QMainWindow):
         hm.addAction(about_a)
 
     def _show_about(self) -> None:
-        try:
-            ver = version("npyquick")
-        except PackageNotFoundError:
-            ver = "unknown"
         QMessageBox.about(
             self,
             "About npyquick",
-            f"<h3>npyquick {ver}</h3>"
+            f"<h3>npyquick {__version__}</h3>"
             "<p>Quick viewer for NumPy .npy and .npz files.</p>"
             f'<p><a href="{REPO_URL}">GitHub repository</a><br>'
             f'<a href="{REPO_URL}/issues">Report an issue</a></p>'
