@@ -92,9 +92,9 @@ class MainWindow(QMainWindow):
         self._build_menu()
         self._build_central()
 
-        next_tab_sc = QShortcut(QKeySequence("Ctrl+Tab"), self)
+        next_tab_sc = QShortcut(QKeySequence.StandardKey.NextChild, self)
         next_tab_sc.activated.connect(self._next_tab)
-        prev_tab_sc = QShortcut(QKeySequence("Ctrl+Shift+Tab"), self)
+        prev_tab_sc = QShortcut(QKeySequence.StandardKey.PreviousChild, self)
         prev_tab_sc.activated.connect(self._prev_tab)
 
         self._sb.showMessage(f"File › Open  ({_kbd('Ctrl+O')})  to load a .npy or .npz file.")
@@ -113,12 +113,14 @@ class MainWindow(QMainWindow):
         self._export_actions: list = []
 
         open_a = QAction("&Open…", self)
-        open_a.setShortcut("Ctrl+O")
+        open_a.setShortcut(QKeySequence.StandardKey.Open)
         open_a.triggered.connect(self.open_file)
         fm.addAction(open_a)
 
         reload_a = QAction("&Reload", self)
-        reload_a.setShortcuts([QKeySequence("Ctrl+R"), QKeySequence("F5")])
+        # setShortcuts (plural) applies every platform binding for the key —
+        # e.g. Ctrl+R and F5 on GNOME, F5 alone on Windows/macOS.
+        reload_a.setShortcuts(QKeySequence.StandardKey.Refresh)
         reload_a.triggered.connect(self._reload_file)
         reload_a.setEnabled(False)
         fm.addAction(reload_a)
@@ -136,7 +138,7 @@ class MainWindow(QMainWindow):
 
         fm.addSeparator()
         quit_a = QAction("&Quit", self)
-        quit_a.setShortcut("Ctrl+Q")
+        quit_a.setShortcut(QKeySequence.StandardKey.Quit)
         quit_a.triggered.connect(self.close)
         fm.addAction(quit_a)
         self._quit_action = quit_a
