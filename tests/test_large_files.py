@@ -143,6 +143,41 @@ def test_npz_select_materializes_only_chosen(tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# Fortran-order memmap: flatten must stay a view (no full-array copy) so the
+# sampling budget actually protects against reading the whole file.
+# ---------------------------------------------------------------------------
+
+def _fortran_memmap(tmp_path, monkeypatch, shape=(8, 8)):
+    monkeypatch.setattr(limits, "LARGE_BYTES", 0)
+    p = tmp_path / "fortran.npy"
+    arr = np.asfortranarray(np.arange(int(np.prod(shape)), dtype=np.float64).reshape(shape))
+    np.save(p, arr)
+    m = NpyDataModel()
+    m.load(str(p))
+    assert isinstance(m.array, np.memmap)
+    assert m.array.flags["F_CONTIGUOUS"] and not m.array.flags["C_CONTIGUOUS"]
+    return m.array
+
+
+def test_stats_does_not_copy_fortran_memmap(tmp_path, monkeypatch):
+    arr = _fortran_memmap(tmp_path, monkeypatch)
+    flat = arr.ravel(order="K")
+    assert np.shares_memory(flat, arr), "flatten copied the whole F-order memmap"
+    # stats still works correctly on the F-order array
+    st = array_stats(arr)
+    assert st.finite_min == 0.0
+    assert st.finite_max == float(arr.size - 1)
+
+
+def test_finite_sample_does_not_copy_fortran_memmap(tmp_path, monkeypatch):
+    arr = _fortran_memmap(tmp_path, monkeypatch)
+    assert np.shares_memory(arr.ravel(order="K"), arr)
+    finite, n_total, n_used = finite_sample(arr)
+    assert n_total == arr.size
+    assert finite.min() == 0.0
+
+
+# ---------------------------------------------------------------------------
 # stats.py — sampling
 # ---------------------------------------------------------------------------
 
