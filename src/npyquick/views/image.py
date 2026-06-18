@@ -737,6 +737,8 @@ class ImageView(BaseView, SpatialView, ColormappedView):
     def set_pair(self, pair_key: str) -> None:
         if pair_key not in complexproj.IMAGE_PAIRS:
             return
+        if pair_key == self._pair and self._complex and self._array is not None:
+            return  # already showing this pair; avoid a redundant reload
         self._pair = pair_key
         self._comp_a, self._comp_b = complexproj.IMAGE_PAIRS[pair_key]
         if self._complex and self._array is not None:

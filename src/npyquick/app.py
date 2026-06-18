@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
 )
 
 from . import __version__
+from .core import complexproj
 from .core.stats import ArrayStats, array_stats
 from .model import NpyDataModel
 from .views.base import ColormappedView, ExportableMixin, SpatialView
@@ -247,12 +248,31 @@ class MainWindow(QMainWindow):
         # index. currentIndexChanged would silently skip the first item if the
         # combo already rested on index 0 after npz population.
         self._array_combo.activated.connect(self._on_array_selected)
+
+        # Complex-component selector; shares the top bar with the array picker.
+        # Tab-contextual: a Real/Imag <-> Abs/Angle pair on the Image tab, the
+        # four single components on the Histogram tab (populated in
+        # _update_top_bar). Hidden for real arrays.
+        self._image_pair = complexproj.DEFAULT_PAIR
+        self._hist_component = complexproj.DEFAULT_HIST
+        self._has_npz_picker = False
+        self._array_label = QLabel("Array:")
+        self._component_label = QLabel("Component:")
+        self._component_combo = QComboBox()
+        self._component_combo.setSizeAdjustPolicy(QComboBox.AdjustToContents)
+        self._component_combo.activated.connect(self._on_component_selected)
+
         self._array_bar = QWidget()
         bar_layout = QHBoxLayout(self._array_bar)
         bar_layout.setContentsMargins(6, 2, 6, 2)
-        bar_layout.addWidget(QLabel("Array:"))
+        bar_layout.addWidget(self._array_label)
         bar_layout.addWidget(self._array_combo)
+        bar_layout.addSpacing(16)
+        bar_layout.addWidget(self._component_label)
+        bar_layout.addWidget(self._component_combo)
         bar_layout.addStretch()
+        self._component_label.setVisible(False)
+        self._component_combo.setVisible(False)
         self._array_bar.setVisible(False)
 
         container = QWidget()
@@ -285,7 +305,37 @@ class MainWindow(QMainWindow):
             return
         self._reset_selected_export_target()
         self._stack.setCurrentIndex(index)
+        self._update_top_bar()  # component selector is tab-contextual
         self._views[index].refresh_status()
+
+    def _update_top_bar(self) -> None:
+        array = self._model.array
+        is_complex = array is not None and np.issubdtype(array.dtype, np.complexfloating)
+        current = self._stack.currentWidget()
+        self._component_combo.blockSignals(True)
+        self._component_combo.clear()
+        show_component = is_complex and current in (self._image_view, self._histogram_view)
+        if show_component and current is self._image_view:
+            self._component_combo.addItems(list(complexproj.IMAGE_PAIRS))
+            self._component_combo.setCurrentText(self._image_pair)
+        elif show_component:
+            self._component_combo.addItems(complexproj.component_names())
+            self._component_combo.setCurrentText(self._hist_component)
+        self._component_combo.blockSignals(False)
+        self._component_label.setVisible(show_component)
+        self._component_combo.setVisible(show_component)
+        self._array_label.setVisible(self._has_npz_picker)
+        self._array_combo.setVisible(self._has_npz_picker)
+        self._array_bar.setVisible(self._has_npz_picker or show_component)
+
+    def _on_component_selected(self, index: int) -> None:
+        text = self._component_combo.itemText(index)
+        if self._stack.currentWidget() is self._image_view:
+            self._image_pair = text
+            self._image_view.set_pair(text)
+        elif self._stack.currentWidget() is self._histogram_view:
+            self._hist_component = text
+            self._histogram_view.set_component(text)
 
     def _set_tabs_enabled(self, compatible: list[str], preferred: str | None = None) -> None:
         for i, v in enumerate(self._views):
@@ -340,7 +390,8 @@ class MainWindow(QMainWindow):
             # the first one — will fire the activated signal.
             self._array_combo.setCurrentIndex(-1)
             self._array_combo.blockSignals(False)
-            self._array_bar.setVisible(True)
+            self._has_npz_picker = True
+            self._update_top_bar()
             self._set_tabs_enabled([])
             self._show_empty("Select an array from the dropdown above")
             n = len(metas)
@@ -349,8 +400,9 @@ class MainWindow(QMainWindow):
                 "  — select one above to view"
             )
         else:
-            # .npy: single array, no picker needed.
-            self._array_bar.setVisible(False)
+            # .npy: single array, no member picker (a complex array may still
+            # surface the component selector via _update_top_bar).
+            self._has_npz_picker = False
             self._refresh_views()
         return True
 
@@ -365,6 +417,12 @@ class MainWindow(QMainWindow):
         for v in self._views:
             if v.VIEW_ID in compatible:
                 v.set_data(array, stats)
+        # Sync complex views to the remembered component selections.
+        if np.issubdtype(array.dtype, np.complexfloating):
+            if self._image_view.can_handle(array):
+                self._image_view.set_pair(self._image_pair)
+            if self._histogram_view.can_handle(array):
+                self._histogram_view.set_component(self._hist_component)
         if self._image_view.can_handle(array):
             self._histogram_view.update_clim_marker(*self._image_view.get_clim())
         else:
@@ -373,6 +431,7 @@ class MainWindow(QMainWindow):
         self._apply_colormap(self._colormap)
         preferred = "lineplot" if self._lineplot_view.can_handle(array) else None
         self._set_tabs_enabled(compatible, preferred)
+        self._update_top_bar()
         self._sb.showMessage(
             f"{os.path.basename(self._current_path)}  |  {_format_array_summary(array, stats)}"
         )
