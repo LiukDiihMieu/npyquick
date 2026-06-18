@@ -67,13 +67,14 @@ def test_table_model_scalar_data_is_value():
 
 
 # ---------------------------------------------------------------------------
-# ImageView.can_handle — complex arrays fall through to the Table view.
+# ImageView.can_handle — 2D complex is shown as a dual real/imag panel; complex
+# RGB is not supported (falls through to the Table view).
 # (Empty-array rejection lives in test_image_canvas.py alongside the rest of
 # the can_handle coverage.)
 # ---------------------------------------------------------------------------
 
-def test_image_rejects_complex_2d():
-    assert ImageView.can_handle(np.zeros((4, 4), dtype=np.complex128)) is False
+def test_image_accepts_complex_2d():
+    assert ImageView.can_handle(np.zeros((4, 4), dtype=np.complex128)) is True
 
 
 def test_image_rejects_complex_rgb():
