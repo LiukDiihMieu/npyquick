@@ -34,12 +34,12 @@ def test_cannot_handle_empty_array():
     assert not HistogramView.can_handle(np.empty((0, 5)))
 
 
-def test_cannot_handle_complex_1d():
-    assert not HistogramView.can_handle(np.array([1+2j, 3+4j], dtype=np.complex128))
+def test_can_handle_complex_1d():
+    assert HistogramView.can_handle(np.array([1+2j, 3+4j], dtype=np.complex128))
 
 
-def test_cannot_handle_complex_2d():
-    assert not HistogramView.can_handle(np.zeros((4, 4), dtype=np.complex64))
+def test_can_handle_complex_2d():
+    assert HistogramView.can_handle(np.zeros((4, 4), dtype=np.complex64))
 
 
 # ---------------------------------------------------------------------------
@@ -264,3 +264,61 @@ def test_histogram_log_toggle_does_not_rerender_or_resample(monkeypatch):
 
     assert called is False
     assert canvas._ax.get_yscale() == "log"
+
+
+# ---------------------------------------------------------------------------
+# complex arrays: component projection
+# ---------------------------------------------------------------------------
+
+def _complex_grid():
+    re = np.linspace(-2, 2, 64).reshape(8, 8)
+    im = np.linspace(0, 3, 64).reshape(8, 8)
+    return (re + 1j * im).astype(np.complex128)
+
+
+def test_histogram_complex_default_magnitude_finite():
+    view = HistogramView()
+    view.set_data(_complex_grid())
+    finite = view._canvas._finite
+    assert finite is not None and finite.size > 0
+    assert np.all(np.isfinite(finite))
+    assert finite.min() >= 0.0  # magnitude is non-negative
+
+
+def test_histogram_set_component_reprojects_without_resampling(monkeypatch):
+    view = HistogramView()
+    view.set_data(_complex_grid())
+
+    sample_calls = 0
+    real_sampler = __import__(
+        "npyquick.core.limits", fromlist=["sampled_flat_view"]
+    ).sampled_flat_view
+
+    def spy_sampler(array, budget):
+        nonlocal sample_calls
+        sample_calls += 1
+        return real_sampler(array, budget)
+
+    monkeypatch.setattr("npyquick.views.histogram.limits.sampled_flat_view", spy_sampler)
+
+    view.set_component("Phase")
+    assert sample_calls == 0, "switching component must not re-sample"
+    phase = view._canvas._finite
+    assert np.all(phase > -np.pi - 1e-9) and np.all(phase <= np.pi + 1e-9)
+
+
+def test_histogram_complex_projection_only_sees_sampled_data(monkeypatch):
+    monkeypatch.setattr("npyquick.views.histogram.limits.HIST_MAX_SAMPLES", 16)
+    seen = {}
+    real_project = __import__(
+        "npyquick.core.complexproj", fromlist=["project"]
+    ).project
+
+    def spy_project(arr, comp):
+        seen["size"] = arr.size
+        return real_project(arr, comp)
+
+    monkeypatch.setattr("npyquick.views.histogram.complexproj.project", spy_project)
+    view = HistogramView()
+    view.set_data(_complex_grid())  # 64 elements, budget 16 → must sample down
+    assert seen["size"] <= 16, "projection must run on the sampled subset only"
