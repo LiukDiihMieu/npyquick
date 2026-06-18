@@ -39,7 +39,6 @@ class LineplotCanvas(ExportableMixin, FigureCanvas):
         self._pan_start_px: tuple | None = None  # pixel coords at pan press
         self._pan_start_xl: tuple | None = None # xlim at pan press
         self._pan_start_yl: tuple | None = None # ylim at pan press
-        self._on_selected: Callable = lambda _: None
 
         self.mpl_connect("motion_notify_event", self._on_motion)
         self.mpl_connect("button_press_event", self._on_press)
@@ -381,7 +380,7 @@ class LineplotView(BaseView):
         self._on_status(s if s else self._status)
 
     def set_on_canvas_selected(self, cb: Callable) -> None:
-        self._canvas._on_selected = cb
+        self._canvas.set_on_selected(cb)
 
     def export_targets(self):
-        return [("Line Plot", self._canvas._export_figure)]
+        return [("Line Plot", self._canvas.export_figure)]

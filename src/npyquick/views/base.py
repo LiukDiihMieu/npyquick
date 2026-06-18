@@ -30,6 +30,11 @@ class ExportableMixin:
         # matplotlib canvases default to NoFocus; ClickFocus lets a click mark
         # this panel as the Ctrl+C / Ctrl+S target (resolved via focusWidget).
         self.setFocusPolicy(Qt.ClickFocus)
+        self._on_selected: Callable = lambda _: None
+
+    def set_on_selected(self, cb: Callable) -> None:
+        """Register a callback invoked with this canvas when it is clicked."""
+        self._on_selected = cb
 
     def _show_status(self, msg: str, timeout: int = 2000) -> None:
         win = self.window()
@@ -46,18 +51,18 @@ class ExportableMixin:
         if not self._exports_allowed():
             return
         menu = QMenu(self)
-        menu.addAction("Export this plot…", self._export_figure)
-        menu.addAction("Copy to clipboard", self._copy_to_clipboard)
+        menu.addAction("Export this plot…", self.export_figure)
+        menu.addAction("Copy to clipboard", self.copy_to_clipboard)
         menu.exec(ev.globalPos())
 
-    def _copy_to_clipboard(self) -> None:
+    def copy_to_clipboard(self) -> None:
         buf = io.BytesIO()
         self.figure.savefig(buf, format="png", dpi=300, bbox_inches="tight")
         buf.seek(0)
         QApplication.clipboard().setImage(QImage.fromData(buf.getvalue()))
         self._show_status(f"{self.panel_name} copied to clipboard")
 
-    def _export_figure(self) -> None:
+    def export_figure(self) -> None:
         s = QSettings("npyquick", "npyquick")
         start = s.value("last_export_dir") or s.value("last_dir", "")
 
