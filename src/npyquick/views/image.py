@@ -30,7 +30,6 @@ class ProfileCanvas(ExportableMixin, FigureCanvas):
         self._transform = PixelTransform()
         self._setup_axes()
         self._lines: list = []
-        self._on_selected: Callable = lambda _: None
         self.mpl_connect("button_press_event", self._on_press)
 
     def _setup_axes(self) -> None:
@@ -95,7 +94,6 @@ class ImageCanvas(ExportableMixin, FigureCanvas):
         self._ax = self._fig.add_subplot(111)
         self._profile = profile
         self._on_status: Callable = lambda _: None
-        self._on_selected: Callable = lambda _: None
         self._data: np.ndarray | None = None      # full resolution (may be a memmap)
         self._disp: np.ndarray | None = None       # float display array (maybe downsampled)
         self._stride: int = 1                      # full-res pixels per display pixel
@@ -530,15 +528,15 @@ class ImageView(BaseView, SpatialView, ColormappedView):
         self._canvas.set_on_status(cb)
 
     def set_on_canvas_selected(self, cb: Callable) -> None:
-        self._canvas._on_selected = cb
-        self._profile._on_selected = cb
+        self._canvas.set_on_selected(cb)
+        self._profile.set_on_selected(cb)
 
     def refresh_status(self) -> None:
         self._on_status(self._canvas.status_str())
 
     def export_targets(self):
-        return [("Image", self._canvas._export_figure),
-                ("Profile", self._profile._export_figure)]
+        return [("Image", self._canvas.export_figure),
+                ("Profile", self._profile.export_figure)]
 
     def set_on_clim_change(self, cb: Callable) -> None:
         self._on_clim_change = cb

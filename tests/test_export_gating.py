@@ -97,10 +97,38 @@ def test_selected_target_drives_export(main_window, write_npy, monkeypatch):
     main_window.load_file(write_npy(np.arange(64, dtype=np.float32).reshape(8, 8)))
     canvas = main_window._image_view._canvas
     called = []
-    monkeypatch.setattr(canvas, "_export_figure", lambda: called.append(True))
+    monkeypatch.setattr(canvas, "export_figure", lambda: called.append(True))
     main_window.set_selected_export_target(canvas)
     main_window._export_selected()
     assert called == [True]
+
+
+def test_selected_target_drives_copy(main_window, write_npy, monkeypatch):
+    main_window.load_file(write_npy(np.arange(64, dtype=np.float32).reshape(8, 8)))
+    canvas = main_window._image_view._canvas
+    called = []
+    monkeypatch.setattr(canvas, "copy_to_clipboard", lambda: called.append(True))
+    main_window.set_selected_export_target(canvas)
+    main_window._copy_selected()
+    assert called == [True]
+
+
+def test_export_targets_expose_public_export_figure(main_window, write_npy):
+    main_window.load_file(write_npy(np.arange(64, dtype=np.float32).reshape(8, 8)))
+    targets = main_window._image_view.export_targets()
+    names = [n for n, _ in targets]
+    assert names == ["Image", "Profile"]
+    for _, fn in targets:
+        assert fn.__name__ == "export_figure"
+
+
+def test_set_on_selected_marks_export_target(main_window, write_npy):
+    main_window.load_file(write_npy(np.arange(64, dtype=np.float32).reshape(8, 8)))
+    canvas = main_window._image_view._canvas
+    # set_on_selected is the public setter views use to wire the click callback;
+    # invoking the stored callback must mark this canvas as the export target.
+    canvas._on_selected(canvas)
+    assert main_window._selected_export_target is canvas
 
 
 # ---------------------------------------------------------------------------

@@ -507,7 +507,7 @@ class MainWindow(QMainWindow):
         if self._selected_export_target is None:
             self._sb.showMessage(f"Click a plot first, then press {_kbd('Ctrl+S')} to export", 2500)
             return
-        self._selected_export_target._export_figure()
+        self._selected_export_target.export_figure()
 
     def _copy_selected(self) -> None:
         if not self._has_data():
@@ -516,7 +516,7 @@ class MainWindow(QMainWindow):
         if self._selected_export_target is None:
             self._sb.showMessage(f"Click a plot first, then press {_kbd('Ctrl+C')} to copy", 2500)
             return
-        self._selected_export_target._copy_to_clipboard()
+        self._selected_export_target.copy_to_clipboard()
 
     def dragEnterEvent(self, ev) -> None:
         urls = ev.mimeData().urls()
