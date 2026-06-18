@@ -88,12 +88,20 @@ class ImageCanvas(ExportableMixin, FigureCanvas):
     _HIT_RADIUS = 12
     panel_name = "Image"
 
-    def __init__(self, profile: ProfileCanvas) -> None:
+    def __init__(self, profile: ProfileCanvas | None = None) -> None:
         self._fig = Figure(layout="compressed")
         super().__init__(self._fig)
         self._ax = self._fig.add_subplot(111)
         self._profile = profile
         self._on_status: Callable = lambda _: None
+        # Hooks for the complex dual-panel mode (no-ops in the single-canvas
+        # real path, so ImageView behaves exactly as before). _on_view_changed
+        # drives continuous-linked zoom; _on_endpoints_changed drives the shared
+        # cross-section. _last_profile lets an owner read the profile this canvas
+        # would draw without owning a ProfileCanvas.
+        self._on_view_changed: Callable = lambda _: None
+        self._on_endpoints_changed: Callable = lambda _: None
+        self._last_profile: tuple | None = None
         self._data: np.ndarray | None = None      # full resolution (may be a memmap)
         self._disp: np.ndarray | None = None       # float display array (maybe downsampled)
         self._stride: int = 1                      # full-res pixels per display pixel
@@ -116,7 +124,12 @@ class ImageCanvas(ExportableMixin, FigureCanvas):
     def set_on_status(self, cb: Callable) -> None:
         self._on_status = cb
 
-    def load(self, data: np.ndarray) -> tuple[str | None, str | None]:
+    def load(
+        self, data: np.ndarray, projector: Callable | None = None
+    ) -> tuple[str | None, str | None]:
+        # projector maps a (strided) complex array to a real one. Applying it
+        # AFTER striding keeps a large complex memmap from fully materializing —
+        # see core/complexproj. _data stays complex; _disp is the real display.
         self._data = data
         self._rgb = data.ndim == 3
         self._fig.clear()
@@ -137,6 +150,9 @@ class ImageCanvas(ExportableMixin, FigureCanvas):
             downsample_str = f"downsampled {h}×{w} → {dh}×{dw}  (1/{s})"
         else:
             sub = data
+
+        if projector is not None:
+            sub = projector(sub)
 
         extent = self._transform.extent(h, w)
         norm_str: str | None = None
@@ -210,6 +226,9 @@ class ImageCanvas(ExportableMixin, FigureCanvas):
                 ch = "RGBA"[: self._data.shape[2]]
                 vals = "  ".join(f"{c}={v[i]:.4g}" for i, c in enumerate(ch))
                 parts.append(f"{coord}  {vals}")
+            elif np.iscomplexobj(self._data):
+                v = self._data[y, x]
+                parts.append(f"{coord}  val={v.real:.4g}{v.imag:+.4g}j")
             else:
                 parts.append(f"{coord}  val={self._data[y, x]:.4g}")
         if self._data is not None:
@@ -251,7 +270,49 @@ class ImageCanvas(ExportableMixin, FigureCanvas):
         s = self._stride
         p0_px, p1_px = self._transform.to_pixel(self._endpoints)
         dists, values = compute_profile(self._disp, p0_px / s, p1_px / s)
-        self._profile.set_profile(dists * s, values)
+        self._last_profile = (dists * s, values)
+        if self._profile is not None:
+            self._profile.set_profile(dists * s, values)
+
+    # ------------------------------------------------------------------
+    # View / endpoint hooks (used by the complex dual-panel mode)
+    # ------------------------------------------------------------------
+
+    def set_on_view_changed(self, cb: Callable) -> None:
+        self._on_view_changed = cb
+
+    def set_on_endpoints_changed(self, cb: Callable) -> None:
+        self._on_endpoints_changed = cb
+
+    def get_view(self) -> tuple[tuple, tuple]:
+        return self._ax.get_xlim(), self._ax.get_ylim()
+
+    def set_view(self, xlim, ylim) -> None:
+        # Silent mirror sink: sets limits without firing _on_view_changed, so a
+        # user zoom on one panel updates the other without an A->B->A echo.
+        self._ax.set_xlim(xlim)
+        self._ax.set_ylim(ylim)
+        self.draw_idle()
+
+    def _apply_view(self, xlim, ylim) -> None:
+        self._ax.set_xlim(xlim)
+        self._ax.set_ylim(ylim)
+        self.draw_idle()
+        self._on_view_changed(self)
+
+    def get_endpoints(self) -> np.ndarray:
+        return self._endpoints.copy()
+
+    def set_endpoints(self, eps) -> None:
+        # Silent: mirror an owner-supplied cross-section without firing back.
+        self._endpoints = np.asarray(eps, dtype=float).copy()
+        if self._cs_line is not None:
+            self._sync_artists()
+        self._refresh_profile()
+        self.draw_idle()
+
+    def profile_data(self) -> tuple | None:
+        return self._last_profile
 
     # ------------------------------------------------------------------
     # Mouse interaction
@@ -269,9 +330,7 @@ class ImageCanvas(ExportableMixin, FigureCanvas):
             return
         h, w = self._data.shape[:2]
         x0, x1, y0_bot, y1_top = self._transform.extent(h, w)
-        self._ax.set_xlim(x0, x1)
-        self._ax.set_ylim(y0_bot, y1_top)
-        self.draw_idle()
+        self._apply_view((x0, x1), (y0_bot, y1_top))
 
     def _on_axes_leave(self, ev) -> None:
         self._hover = None
@@ -295,9 +354,7 @@ class ImageCanvas(ExportableMixin, FigureCanvas):
         if xl[0] >= xl[1] or yl[1] >= yl[0]:
             self._reset_zoom()
             return
-        self._ax.set_xlim(xl)
-        self._ax.set_ylim(yl)
-        self.draw_idle()
+        self._apply_view(xl, yl)
 
     def _on_press(self, ev) -> None:
         # Any click anywhere on this canvas selects it as the export target.
@@ -341,6 +398,7 @@ class ImageCanvas(ExportableMixin, FigureCanvas):
             self._sync_artists()
             self._refresh_profile()
             self.draw_idle()
+            self._on_endpoints_changed(self)
         elif self._pan_start is not None:
             x0_px, y0_px, xlim0, ylim0, inv0 = self._pan_start
             p0 = inv0.transform([x0_px, y0_px])
@@ -359,9 +417,7 @@ class ImageCanvas(ExportableMixin, FigureCanvas):
                 yl = [y_top + span_y, y_top]
             elif yl[0] > y_bot:
                 yl = [y_bot, y_bot - span_y]
-            self._ax.set_xlim(xl)
-            self._ax.set_ylim(yl)
-            self.draw_idle()
+            self._apply_view(xl, yl)
 
         self._on_status(self.status_str())
 
@@ -376,7 +432,8 @@ class ImageCanvas(ExportableMixin, FigureCanvas):
             return
         old_t = self._transform
         self._transform = new_t
-        self._profile.set_pixel_size(ps, unit)
+        if self._profile is not None:
+            self._profile.set_pixel_size(ps, unit)
         if self._data is None:
             return
         h, w = self._data.shape[:2]
@@ -407,7 +464,10 @@ class ImageCanvas(ExportableMixin, FigureCanvas):
     def reset_clim(self) -> None:
         if self._im is None or self._rgb or self._data is None:
             return
-        stats = array_stats(self._data)
+        # _data is complex in the dual-panel mode; array_stats rejects complex,
+        # so reset from the already-projected real display instead.
+        source = self._disp if np.iscomplexobj(self._data) else self._data
+        stats = array_stats(source)
         if stats is None or stats.finite_min is None:
             return  # all-NaN/Inf: nothing sensible to reset to
         self._im.set_clim(stats.finite_min, stats.finite_max)
