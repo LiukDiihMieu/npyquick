@@ -25,19 +25,11 @@ def finite_sample(array: np.ndarray) -> tuple[np.ndarray, int, int]:
 
     Subsampling is driven by element count against HIST_MAX_SAMPLES (a compute
     budget independent of the byte-based I/O threshold), applied before the
-    finite mask so a memmap is never fully read. downsample_stride returns 1
-    when within budget. n_used is the sample size before masking.
-
-    ravel(order="K") flattens in memory order, staying a view for both C- and
-    F-contiguous arrays; a plain reshape(-1) is C-order and would copy a whole
-    Fortran-order memmap into RAM before sampling. Order is irrelevant to a
-    histogram / finite count.
+    finite mask so a memmap is never fully read. n_used is the sample size
+    before masking. See limits.sampled_flat_view for the ravel(order="K")
+    rationale that keeps Fortran-order memmaps from being copied.
     """
-    flat = array.ravel(order="K")
-    n_total = flat.size
-    stride = limits.downsample_stride(n_total, limits.HIST_MAX_SAMPLES)
-    sample = np.asarray(flat[::stride])
-    n_used = sample.size
+    sample, n_total, n_used = limits.sampled_flat_view(array, limits.HIST_MAX_SAMPLES)
     if np.issubdtype(array.dtype, np.inexact):
         finite = sample[np.isfinite(sample)]
     else:

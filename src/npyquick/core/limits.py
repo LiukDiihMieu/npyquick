@@ -38,3 +38,24 @@ def stride_for(n_total: int, budget: int) -> int:
 def downsample_stride(n_total: int, budget: int) -> int:
     """Stride for 1D (flattened) sampling so kept samples stay within budget."""
     return max(1, ceil(n_total / budget))
+
+
+def sampled_flat_view(array: np.ndarray, budget: int) -> tuple[np.ndarray, int, int]:
+    """Flatten and stride-sample an array within a compute budget.
+
+    Returns ``(sample, n_total, n_used)``. downsample_stride returns 1 when the
+    array is within budget, so the sample is then the full flat view and
+    ``n_used == n_total``.
+
+    ravel(order="K") flattens in memory order, so it stays a view for both C-
+    and F-contiguous arrays. A plain reshape(-1) is C-order and would copy a
+    whole Fortran-order memmap into RAM before sampling — defeating the large-
+    array protection. Memory order is irrelevant to min/max, anomaly counts, and
+    histogram binning, which is why every flat-sampling caller routes through
+    here.
+    """
+    flat = array.ravel(order="K")
+    n_total = flat.size
+    stride = downsample_stride(n_total, budget)
+    sample = np.asarray(flat[::stride])
+    return sample, n_total, sample.size
