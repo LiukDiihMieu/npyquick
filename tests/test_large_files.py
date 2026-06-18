@@ -177,6 +177,21 @@ def test_finite_sample_does_not_copy_fortran_memmap(tmp_path, monkeypatch):
     assert finite.min() == 0.0
 
 
+def test_sampled_flat_view_keeps_fortran_memmap_a_view(tmp_path, monkeypatch):
+    arr = _fortran_memmap(tmp_path, monkeypatch)
+    sample, n_total, n_used = limits.sampled_flat_view(arr, limits.HIST_MAX_SAMPLES)
+    assert np.shares_memory(sample, arr), "sampled_flat_view copied the F-order memmap"
+    assert n_total == arr.size
+    assert n_used == arr.size  # within budget: full flat view, no subsampling
+
+
+def test_sampled_flat_view_subsamples_over_budget():
+    arr = np.arange(100, dtype=np.float64)
+    sample, n_total, n_used = limits.sampled_flat_view(arr, budget=10)
+    assert n_total == 100
+    assert n_used < n_total  # stride > 1 once the element count exceeds budget
+
+
 # ---------------------------------------------------------------------------
 # stats.py — sampling
 # ---------------------------------------------------------------------------

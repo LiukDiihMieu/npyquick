@@ -69,14 +69,8 @@ def array_stats(array: np.ndarray) -> ArrayStats | None:
     if not is_real_numeric(array) or array.size == 0:
         return None
 
-    # ravel(order="K") flattens in memory order, so it stays a view for both C-
-    # and F-contiguous arrays. A plain reshape(-1) is C-order and would copy a
-    # whole Fortran-order memmap into RAM before sampling — defeating the large-
-    # array protection. Order does not matter for min/max/anomaly counts.
-    flat = array.ravel(order="K")
-    stride = limits.downsample_stride(flat.size, limits.HIST_MAX_SAMPLES)
-    sampled = stride > 1
-    sample = np.asarray(flat[::stride]) if sampled else array
+    sample, n_total, n_used = limits.sampled_flat_view(array, limits.HIST_MAX_SAMPLES)
+    sampled = n_used < n_total
 
     if np.issubdtype(array.dtype, np.integer):
         lo, hi = float(sample.min()), float(sample.max())
