@@ -122,7 +122,13 @@ class HistogramCanvas(ExportableMixin, FigureCanvas):
             )
         else:
             bins = self._n_bins if self._n_bins == "auto" else int(self._n_bins)
-            counts, edges = np.histogram(finite, bins=bins)
+            try:
+                counts, edges = np.histogram(finite, bins=bins)
+            except ValueError:
+                # Near-constant data (e.g. unit-magnitude phase data) has a range
+                # too small to split into many finite-width bins; one bar is the
+                # honest result. (Exactly-constant data is handled by numpy.)
+                counts, edges = np.histogram(finite, bins=1)
             self._counts = counts
             self._edges = edges
             self._ax.bar(

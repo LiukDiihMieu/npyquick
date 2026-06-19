@@ -69,6 +69,30 @@ def test_complex_1d_table_and_histogram_only(main_window, write_npy):
     assert "image" not in en and "lineplot" not in en
 
 
+def test_complex_1d_unit_magnitude_opens(main_window, write_npy):
+    # Regression: a unit-magnitude 1D field used to abort the load silently
+    # (histogram binning crashed on the near-constant magnitude).
+    arr = np.exp(2j * np.pi * np.linspace(0, 1, 256)).astype(np.complex64)
+    main_window.load_file(write_npy(arr))
+    en = _enabled(main_window)
+    assert "histogram" in en and "table" in en
+    assert main_window._tabs.isVisible()
+
+
+def test_npz_select_1d_complex_member_switches(main_window, write_npz):
+    path = write_npz(
+        line=np.exp(2j * np.pi * np.linspace(0, 1, 256)).astype(np.complex64),
+        img=np.ones((8, 8), dtype=np.float32),
+    )
+    main_window.load_file(path)
+    combo = main_window._array_combo
+    idx = next(i for i in range(combo.count()) if combo.itemData(i) == "line")
+    main_window._on_array_selected(idx)
+    en = _enabled(main_window)
+    assert "histogram" in en and "table" in en
+    assert "image" not in en
+
+
 def test_histogram_component_persists_across_files(main_window, write_npy):
     main_window.load_file(write_npy(_complex2d()))
     main_window._tabs.setCurrentIndex(_tab_index(main_window, "histogram"))

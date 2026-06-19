@@ -276,6 +276,22 @@ def _complex_grid():
     return (re + 1j * im).astype(np.complex128)
 
 
+def test_histogram_near_constant_complex_does_not_raise():
+    # Unit-magnitude phase data: Abs is ~1 everywhere, a range too small for many
+    # bins. Must not raise (this aborted the whole file load before the guard).
+    canvas = HistogramCanvas()
+    arr = np.exp(2j * np.pi * np.linspace(0, 1, 256)).astype(np.complex64)
+    canvas.plot_complex(arr, "Abs")
+    assert canvas._counts is not None
+
+
+def test_histogram_near_constant_real_does_not_raise():
+    canvas = HistogramCanvas()
+    arr = np.abs(np.exp(2j * np.pi * np.linspace(0, 1, 256))).astype(np.float64)
+    canvas.plot(arr)
+    assert canvas._counts is not None
+
+
 def test_histogram_complex_default_magnitude_finite():
     view = HistogramView()
     view.set_data(_complex_grid())
