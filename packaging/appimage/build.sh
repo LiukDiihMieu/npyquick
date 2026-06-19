@@ -87,7 +87,11 @@ cp packaging/appimage/npyquick.png \
 # which is absent on many systems. AppRun adds usr/lib to LD_LIBRARY_PATH.
 LDCONFIG="$(command -v ldconfig || echo /sbin/ldconfig)"
 for lib in libxcb-cursor.so.0; do
-    src="$("$LDCONFIG" -p 2>/dev/null | awk -v l="$lib" '$1==l {print $NF; exit}')"
+    # Read all of ldconfig's output (no awk `exit`): exiting at the first match
+    # closes the pipe early, ldconfig gets SIGPIPE, and `set -o pipefail` would
+    # abort the whole build — flaky, since the match is near the top of a long
+    # list. Print only the first match instead.
+    src="$("$LDCONFIG" -p 2>/dev/null | awk -v l="$lib" '$1==l && !f {print $NF; f=1}')"
     if [ -n "$src" ] && [ -f "$src" ]; then
         cp -L "$src" "$APPDIR/usr/lib/$lib"
         echo ">> bundled $lib ($src)"
