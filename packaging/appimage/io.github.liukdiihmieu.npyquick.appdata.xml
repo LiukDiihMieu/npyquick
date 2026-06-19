@@ -17,7 +17,7 @@
       <li>Image view for 2D grayscale and RGB arrays, with zoom, pan, colormap and brightness control, and a draggable cross-section profile.</li>
       <li>Histogram view with linear or log-scaled counts, robust range selection, and NaN / Inf reporting.</li>
       <li>Line plot view for 1D signals and paired (x, y) arrays.</li>
-      <li>Table view as a fallback for higher-dimensional, complex, object, scalar, or empty arrays.</li>
+      <li>Table view as a fallback for higher-dimensional, object, scalar, or empty arrays.</li>
     </ul>
   </description>
   <launchable type="desktop-id">io.github.liukdiihmieu.npyquick.desktop</launchable>
