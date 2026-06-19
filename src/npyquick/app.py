@@ -4,9 +4,10 @@
 from __future__ import annotations
 
 import os
+import sys
 
 import numpy as np
-from PySide6.QtCore import Qt, QSettings, QUrl
+from PySide6.QtCore import QKeyCombination, Qt, QSettings, QUrl
 from PySide6.QtGui import QAction, QActionGroup, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
@@ -40,6 +41,43 @@ REPO_URL = "https://github.com/LiukDiihMieu/npyquick"
 def _kbd(seq: str) -> str:
     # Native display text for a shortcut: "Ctrl+O" on Linux/Windows, "⌘O" on macOS.
     return QKeySequence(seq).toString(QKeySequence.NativeText)
+
+
+def _tab_switch_sequences(
+    platform: str = sys.platform,
+) -> tuple[list[QKeySequence], list[QKeySequence]]:
+    """Return (next-tab, previous-tab) key sequences for the given platform.
+
+    Shift+Tab reaches Qt as Qt.Key_Backtab with the Shift consumed, so the
+    "previous" sequences use Key_Backtab without a Shift modifier (QTBUG-8010).
+
+    macOS (issue #26): Qt maps Qt.ControlModifier to Command (⌘) and
+    Qt.MetaModifier to the physical Control key. StandardKey.NextChild would
+    land on ⌘+Tab, which the OS reserves for app switching, so we bind the
+    physical-Control combos (Ctrl+Tab / Ctrl+Shift+Tab) plus the Safari-style
+    ⌘+Shift+] / ⌘+Shift+[ instead.
+
+    Linux/Windows (issue #25): Ctrl+Tab works as the standard key; Ctrl+Backtab
+    is the form Qt actually delivers for Ctrl+Shift+Tab.
+    """
+    if platform == "darwin":
+        ctrl = Qt.KeyboardModifier.MetaModifier       # physical Control on macOS
+        cmd = Qt.KeyboardModifier.ControlModifier     # ⌘ on macOS
+        shift = Qt.KeyboardModifier.ShiftModifier
+        next_seqs = [
+            QKeySequence(QKeyCombination(ctrl, Qt.Key.Key_Tab)),
+            QKeySequence(QKeyCombination(cmd | shift, Qt.Key.Key_BracketRight)),
+        ]
+        prev_seqs = [
+            QKeySequence(QKeyCombination(ctrl, Qt.Key.Key_Backtab)),
+            QKeySequence(QKeyCombination(cmd | shift, Qt.Key.Key_BracketLeft)),
+        ]
+        return next_seqs, prev_seqs
+
+    return (
+        [QKeySequence(QKeySequence.StandardKey.NextChild)],  # Ctrl+Tab
+        [QKeySequence("Ctrl+Backtab")],
+    )
 
 
 def _apply_canvas_theme() -> None:
@@ -95,10 +133,13 @@ class MainWindow(QMainWindow):
         self._build_menu()
         self._build_central()
 
-        next_tab_sc = QShortcut(QKeySequence.StandardKey.NextChild, self)
-        next_tab_sc.activated.connect(self._next_tab)
-        prev_tab_sc = QShortcut(QKeySequence.StandardKey.PreviousChild, self)
-        prev_tab_sc.activated.connect(self._prev_tab)
+        # Tab switching. The sequences are platform-specific (see
+        # _tab_switch_sequences); macOS needs different ones to dodge ⌘+Tab.
+        next_seqs, prev_seqs = _tab_switch_sequences()
+        self._tab_shortcuts = [
+            *(self._bind_shortcut(seq, self._next_tab) for seq in next_seqs),
+            *(self._bind_shortcut(seq, self._prev_tab) for seq in prev_seqs),
+        ]
 
         self._sb.showMessage(f"File › Open  ({_kbd('Ctrl+O')})  to load a .npy or .npz file.")
 
@@ -452,6 +493,11 @@ class MainWindow(QMainWindow):
     def _reload_file(self) -> None:
         if self._current_path and self.load_file(self._current_path):
             self._sb.showMessage("File reloaded", 3000)
+
+    def _bind_shortcut(self, seq: QKeySequence, slot) -> QShortcut:
+        sc = QShortcut(seq, self)
+        sc.activated.connect(slot)
+        return sc
 
     def _next_tab(self) -> None:
         if not self._tabs.isVisible():

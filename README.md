@@ -113,6 +113,9 @@ For detailed display rules, normalization behavior, downsampling, and performanc
 | `Ctrl+Tab`       | Switch to next enabled tab     |
 | `Ctrl+Shift+Tab` | Switch to previous enabled tab |
 
+On macOS, `⌘+Tab` is reserved by the system for app switching, so tab switching
+uses `Control+Tab` / `Control+Shift+Tab` or `⌘+Shift+]` / `⌘+Shift+[` (as in Safari).
+
 ## Linux desktop integration
 
 Register npyquick as the handler for `.npy` / `.npz` files so you can double-click them in your file manager, or right-click → Open With:
