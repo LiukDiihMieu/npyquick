@@ -61,13 +61,14 @@ def test_no_ambiguous_overlap_between_next_and_prev():
 # ---------------------------------------------------------------------------
 
 def test_window_registers_platform_sequences(main_window):
+    # Tab switching is the only thing wired up via QShortcut (menu items use
+    # QAction.setShortcut), so the QShortcut children are exactly these.
     registered = {
         sc.key().toString(QKeySequence.PortableText)
         for sc in main_window.findChildren(QShortcut)
     }
     nxt, prev = _tab_switch_sequences()
-    for seq in _portable(nxt) + _portable(prev):
-        assert seq in registered
+    assert registered == set(_portable(nxt) + _portable(prev))
 
 
 # ---------------------------------------------------------------------------

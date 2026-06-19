@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import os
 import sys
+from collections.abc import Callable
 
 import numpy as np
 from PySide6.QtCore import QKeyCombination, Qt, QSettings, QUrl
@@ -494,7 +495,7 @@ class MainWindow(QMainWindow):
         if self._current_path and self.load_file(self._current_path):
             self._sb.showMessage("File reloaded", 3000)
 
-    def _bind_shortcut(self, seq: QKeySequence, slot) -> QShortcut:
+    def _bind_shortcut(self, seq: QKeySequence, slot: Callable[[], None]) -> QShortcut:
         sc = QShortcut(seq, self)
         sc.activated.connect(slot)
         return sc
