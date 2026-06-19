@@ -16,13 +16,10 @@ from PySide6.QtWidgets import (
 from ..core import complexproj, limits
 from ..core.coord import PixelTransform
 from ..core.profile import compute_profile
-from ..core.stats import ArrayStats, array_stats, is_real_numeric
+from ..core.stats import (
+    ArrayStats, array_stats, complex_anomaly_str, is_real_numeric,
+)
 from .base import BaseView, ColormappedView, ExportableMixin, SpatialView
-
-# Display labels for complex components (profile y-axis + clim prefix).
-_COMPONENT_LABEL = {
-    "Real": "Real", "Imag": "Imaginary", "Magnitude": "Magnitude", "Phase": "Phase",
-}
 
 
 class ProfileCanvas(ExportableMixin, FigureCanvas):
@@ -606,7 +603,9 @@ class ImageView(BaseView, SpatialView, ColormappedView):
             self._set_complex_mode(True)
             self._active = self._canvas
             self._norm_label.setVisible(False)
-            self._anomaly_label.setVisible(False)
+            anomaly = complex_anomaly_str(array)
+            self._anomaly_label.setText(anomaly)
+            self._anomaly_label.setVisible(bool(anomaly))
             for w in (self._vmin_edit, self._vmax_edit, self._apply_btn, self._reset_btn):
                 w.setEnabled(True)
             self._load_complex_panels()
@@ -663,8 +662,8 @@ class ImageView(BaseView, SpatialView, ColormappedView):
 
     def export_targets(self):
         if self._complex:
-            return [(_COMPONENT_LABEL[self._comp_a], self._canvas.export_figure),
-                    (_COMPONENT_LABEL[self._comp_b], self._canvas_b.export_figure),
+            return [(self._comp_a, self._canvas.export_figure),
+                    (self._comp_b, self._canvas_b.export_figure),
                     ("Profile", self._profile.export_figure)]
         return [("Image", self._canvas.export_figure),
                 ("Profile", self._profile.export_figure)]
@@ -727,7 +726,7 @@ class ImageView(BaseView, SpatialView, ColormappedView):
         _, ds = self._canvas.load(arr, lambda s: complexproj.project(s, a))
         self._canvas_b.load(arr, lambda s: complexproj.project(s, b))
         for canvas, comp in ((self._canvas, a), (self._canvas_b, b)):
-            if comp == "Phase":
+            if comp == "Angle":
                 canvas.set_clim(-np.pi, np.pi)
         self._canvas_b.set_endpoints(self._canvas.get_endpoints())
         self._show_downsample(ds)
@@ -770,11 +769,11 @@ class ImageView(BaseView, SpatialView, ColormappedView):
             return
         dists, values = pd
         self._profile.set_profile(dists, values)
-        self._profile.set_ylabel(_COMPONENT_LABEL[self._active_component_name()])
+        self._profile.set_ylabel(self._active_component_name())
 
     def _sync_clim_controls(self) -> None:
         comp = self._active_component_name()
-        self._clim_prefix_label.setText(_COMPONENT_LABEL[comp])
+        self._clim_prefix_label.setText(comp)
         im = self._active._im
         if im is not None:
             vmin, vmax = im.get_clim()

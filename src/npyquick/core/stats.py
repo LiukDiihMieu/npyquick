@@ -86,3 +86,29 @@ def array_stats(array: np.ndarray) -> ArrayStats | None:
         float(finite.min()), float(finite.max()),
         nan_count, pos_inf_count, neg_inf_count, sampled,
     )
+
+
+def complex_anomaly_str(array: np.ndarray) -> str:
+    """Anomaly summary for a complex array, e.g. 'NaN: 3  Inf: 2', or ''.
+
+    A complex value is anomalous when either part is NaN/Inf; +Inf/-Inf cannot be
+    split for complex, so they are reported as a single Inf count. Sampled like
+    array_stats, so the message stays qualitative for large arrays.
+    """
+    if array.size == 0 or not np.issubdtype(array.dtype, np.complexfloating):
+        return ""
+    sample, n_total, n_used = limits.sampled_flat_view(array, limits.HIST_MAX_SAMPLES)
+    sampled = n_used < n_total
+    is_nan = np.isnan(sample)
+    nan_count = int(np.sum(is_nan))
+    inf_count = int(np.sum(np.isinf(sample) & ~is_nan))
+    if nan_count == 0 and inf_count == 0:
+        return ""
+    if sampled:
+        return "NaN/Inf present in sample"
+    parts = []
+    if nan_count:
+        parts.append(f"NaN: {nan_count}")
+    if inf_count:
+        parts.append(f"Inf: {inf_count}")
+    return "  ".join(parts)

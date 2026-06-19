@@ -14,21 +14,23 @@ from __future__ import annotations
 
 import numpy as np
 
-# Insertion order defines the order components appear in selectors.
+# Insertion order defines the order components appear in selectors. These exact
+# labels are used everywhere a component is named (histogram menu, image pair,
+# profile y-label, clim prefix) so the vocabulary stays consistent.
 COMPONENTS = {
-    "Real": np.real,        # view
-    "Imag": np.imag,        # view
-    "Magnitude": np.abs,    # computes
-    "Phase": np.angle,      # computes; radians, wrapped (-pi, pi]
+    "Real": np.real,    # view
+    "Imag": np.imag,    # view
+    "Abs": np.abs,      # computes (magnitude)
+    "Angle": np.angle,  # computes; radians, wrapped (-pi, pi]
 }
 
 # Default single component for the histogram's component selector.
-DEFAULT_HIST = "Magnitude"
+DEFAULT_HIST = "Abs"
 
 # Pairs the image view can show side by side; value is (panel_a, panel_b).
 IMAGE_PAIRS = {
     "Real / Imag": ("Real", "Imag"),
-    "Abs / Angle": ("Magnitude", "Phase"),
+    "Abs / Angle": ("Abs", "Angle"),
 }
 DEFAULT_PAIR = "Real / Imag"
 

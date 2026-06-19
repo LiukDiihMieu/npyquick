@@ -44,11 +44,11 @@ def test_set_pair_flips_components_and_phase_clim():
     iv = ImageView()
     iv.set_data(_complex())
     iv.set_pair("Abs / Angle")
-    assert (iv._comp_a, iv._comp_b) == ("Magnitude", "Phase")
-    # Phase panel (B) clamps to (-pi, pi].
+    assert (iv._comp_a, iv._comp_b) == ("Abs", "Angle")
+    # Angle panel (B) clamps to (-pi, pi].
     vmin, vmax = iv._canvas_b._im.get_clim()
     assert vmin == -np.pi and vmax == np.pi
-    # Magnitude panel (A) is non-negative.
+    # Abs panel (A) is non-negative.
     assert iv._canvas._disp.min() >= 0.0
 
 
@@ -60,8 +60,8 @@ def test_click_switches_active_profile_label_and_clim_prefix():
 
     iv._on_canvas_clicked(iv._canvas_b)
     assert iv._active is iv._canvas_b
-    assert iv._profile._ylabel == "Imaginary"
-    assert iv._clim_prefix_label.text() == "Imaginary"
+    assert iv._profile._ylabel == "Imag"
+    assert iv._clim_prefix_label.text() == "Imag"
 
 
 def test_continuous_linked_zoom_between_panels():
@@ -97,11 +97,23 @@ def test_complex_get_clim_reports_none():
     assert iv.get_clim() == (None, None)
 
 
+def test_complex_anomaly_count_shown():
+    arr = _complex()
+    arr[0, 0] = complex(np.nan, 0.0)
+    arr[1, 1] = complex(np.inf, 1.0)
+    arr[2, 2] = complex(1.0, -np.inf)
+    iv = ImageView()
+    iv.set_data(arr)
+    assert not iv._anomaly_label.isHidden()
+    txt = iv._anomaly_label.text()
+    assert "NaN: 1" in txt and "Inf: 2" in txt
+
+
 def test_export_targets_labels_for_complex():
     iv = ImageView()
     iv.set_data(_complex())
     names = [n for n, _ in iv.export_targets()]
-    assert names == ["Real", "Imaginary", "Profile"]
+    assert names == ["Real", "Imag", "Profile"]
     iv.set_pair("Abs / Angle")
     names = [n for n, _ in iv.export_targets()]
-    assert names == ["Magnitude", "Phase", "Profile"]
+    assert names == ["Abs", "Angle", "Profile"]

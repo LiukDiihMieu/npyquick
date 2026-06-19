@@ -301,7 +301,7 @@ def test_histogram_set_component_reprojects_without_resampling(monkeypatch):
 
     monkeypatch.setattr("npyquick.views.histogram.limits.sampled_flat_view", spy_sampler)
 
-    view.set_component("Phase")
+    view.set_component("Angle")
     assert sample_calls == 0, "switching component must not re-sample"
     phase = view._canvas._finite
     assert np.all(phase > -np.pi - 1e-9) and np.all(phase <= np.pi + 1e-9)

@@ -18,13 +18,13 @@ def test_real_imag_are_zero_copy_views():
 
 def test_magnitude_and_phase_values():
     arr = np.array([1 + 1j], dtype=np.complex128)
-    assert complexproj.project(arr, "Magnitude")[0] == np.sqrt(2.0)
-    assert complexproj.project(arr, "Phase")[0] == np.pi / 4
+    assert complexproj.project(arr, "Abs")[0] == np.sqrt(2.0)
+    assert complexproj.project(arr, "Angle")[0] == np.pi / 4
 
 
 def test_phase_wraps_to_pi_interval():
     arr = np.array([-1 + 0j, 1j, -1j], dtype=np.complex128)
-    phase = complexproj.project(arr, "Phase")
+    phase = complexproj.project(arr, "Angle")
     assert np.all(phase > -np.pi - 1e-9) and np.all(phase <= np.pi + 1e-9)
     assert phase[0] == np.pi          # angle of -1
     assert phase[1] == np.pi / 2      # angle of +i
@@ -32,11 +32,11 @@ def test_phase_wraps_to_pi_interval():
 
 
 def test_component_names_order():
-    assert complexproj.component_names() == ["Real", "Imag", "Magnitude", "Phase"]
+    assert complexproj.component_names() == ["Real", "Imag", "Abs", "Angle"]
 
 
 def test_image_pairs_mapping():
     assert complexproj.IMAGE_PAIRS["Real / Imag"] == ("Real", "Imag")
-    assert complexproj.IMAGE_PAIRS["Abs / Angle"] == ("Magnitude", "Phase")
+    assert complexproj.IMAGE_PAIRS["Abs / Angle"] == ("Abs", "Angle")
     assert complexproj.DEFAULT_PAIR in complexproj.IMAGE_PAIRS
     assert complexproj.DEFAULT_HIST in complexproj.COMPONENTS

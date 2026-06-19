@@ -58,7 +58,7 @@ def test_selecting_pair_reprojects_image_panels(main_window, write_npy):
     idx = list(complexproj.IMAGE_PAIRS).index("Abs / Angle")
     main_window._on_component_selected(idx)  # mirrors the activated signal
     assert main_window._image_pair == "Abs / Angle"
-    assert (main_window._image_view._comp_a, main_window._image_view._comp_b) == ("Magnitude", "Phase")
+    assert (main_window._image_view._comp_a, main_window._image_view._comp_b) == ("Abs", "Angle")
 
 
 def test_complex_1d_table_and_histogram_only(main_window, write_npy):
@@ -72,6 +72,6 @@ def test_complex_1d_table_and_histogram_only(main_window, write_npy):
 def test_histogram_component_persists_across_files(main_window, write_npy):
     main_window.load_file(write_npy(_complex2d()))
     main_window._tabs.setCurrentIndex(_tab_index(main_window, "histogram"))
-    main_window._on_component_selected(complexproj.component_names().index("Phase"))
-    assert main_window._hist_component == "Phase"
-    assert main_window._histogram_view._component == "Phase"
+    main_window._on_component_selected(complexproj.component_names().index("Angle"))
+    assert main_window._hist_component == "Angle"
+    assert main_window._histogram_view._component == "Angle"
