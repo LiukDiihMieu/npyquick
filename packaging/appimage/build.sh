@@ -62,6 +62,19 @@ mkdir -p "$APPDIR/usr/bin" "$APPDIR/usr/lib" \
          "$APPDIR/usr/share/icons/hicolor/256x256/apps" \
          "$APPDIR/usr/share/icons/hicolor/512x512/apps"
 cp -a "$WORK/dist/npyquick/." "$APPDIR/usr/bin/"
+
+# Guard: the GLib family must NOT be bundled (the .spec filters it out) so the
+# host provides it and host GIO modules like dconf keep working — otherwise dark
+# mode and other desktop settings break on hosts newer than the build machine
+# (issue #19). Fail loudly if PyInstaller ever bundles them again.
+stray="$(find "$APPDIR/usr/bin" -regextype posix-extended \
+    -regex '.*/lib(glib|gio|gobject|gmodule|gthread)-2\.0\.so.*' 2>/dev/null)"
+if [ -n "$stray" ]; then
+    echo ">> ERROR: GLib libraries leaked into the bundle (must come from host):" >&2
+    echo "$stray" >&2
+    exit 1
+fi
+
 install -m 755 packaging/appimage/AppRun "$APPDIR/AppRun"
 cp packaging/appimage/io.github.liukdiihmieu.npyquick.desktop \
    "$APPDIR/io.github.liukdiihmieu.npyquick.desktop"

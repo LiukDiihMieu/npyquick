@@ -35,6 +35,29 @@ a = Analysis(
     noarchive=False,
 )
 
+# AppImage/Linux: GLib and its GIO/GObject siblings must come from the host, not
+# the bundle. Qt and GTK read desktop settings (e.g. the GNOME dark-mode
+# color-scheme, issue #19) through GIO modules such as dconf that are loaded from
+# the host at runtime and built against the host GLib. A bundled GLib shadows the
+# host one; on a host newer than the build machine those modules then fail to
+# resolve their symbols, GSettings falls back to defaults, and dark mode reads as
+# light — exactly the case AppImage's excludelist warns about. Dropping the GLib
+# family lets the host provide it. Safe because the build runs on the oldest
+# supported system (Ubuntu 22.04 / GLib 2.72), so the bundled Qt/GTK need no
+# newer GLib than any supported host already ships. These names never match on
+# Windows, so the filter is a no-op there.
+_host_provided = (
+    "libglib-2.0.so",
+    "libgio-2.0.so",
+    "libgobject-2.0.so",
+    "libgmodule-2.0.so",
+    "libgthread-2.0.so",
+)
+a.binaries = [
+    b for b in a.binaries
+    if not os.path.basename(b[0]).startswith(_host_provided)
+]
+
 pyz = PYZ(a.pure)
 
 exe = EXE(
