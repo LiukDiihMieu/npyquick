@@ -43,7 +43,7 @@ class ProfileCanvas(ExportableMixin, FigureCanvas):
 
     def set_ylabel(self, label: str) -> None:
         # Complex mode labels the profile with the active component
-        # ("Real"/"Imaginary"/...) instead of the generic "Intensity".
+        # ("Real"/"Imag"/"Abs"/"Angle") instead of the generic "Intensity".
         self._ylabel = label
         self._ax.set_ylabel(label)
         self.draw_idle()
@@ -690,9 +690,9 @@ class ImageView(BaseView, SpatialView, ColormappedView):
         self._vmin_edit.clear()
         self._vmax_edit.clear()
         if self._complex:
-            # Reset both panels; Phase always returns to its natural (-pi, pi].
+            # Reset both panels; Angle always returns to its natural (-pi, pi].
             for canvas, comp in ((self._canvas, self._comp_a), (self._canvas_b, self._comp_b)):
-                if comp == "Phase":
+                if comp == "Angle":
                     canvas.set_clim(-np.pi, np.pi)
                 else:
                     canvas.reset_clim()

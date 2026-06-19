@@ -97,6 +97,15 @@ def test_complex_get_clim_reports_none():
     assert iv.get_clim() == (None, None)
 
 
+def test_reset_clim_pins_angle_panel():
+    iv = ImageView()
+    iv.set_data(_complex())
+    iv.set_pair("Abs / Angle")
+    iv._canvas_b.set_clim(0.0, 1.0)  # perturb the Angle panel
+    iv._reset_clim()
+    assert iv._canvas_b._im.get_clim() == (-np.pi, np.pi)
+
+
 def test_complex_anomaly_count_shown():
     arr = _complex()
     arr[0, 0] = complex(np.nan, 0.0)
