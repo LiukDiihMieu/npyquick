@@ -105,8 +105,7 @@ def test_complex_anomaly_count_shown():
     iv = ImageView()
     iv.set_data(arr)
     assert not iv._anomaly_label.isHidden()
-    txt = iv._anomaly_label.text()
-    assert "NaN: 1" in txt and "Inf: 2" in txt
+    assert iv._anomaly_label.text() == "NaN: 1  +Inf: 1  -Inf: 1"
 
 
 def test_export_targets_labels_for_complex():

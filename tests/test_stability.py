@@ -88,3 +88,12 @@ def test_image_rejects_complex_rgb():
 def test_table_accepts_complex():
     from npyquick.views.table import RawTableView
     assert RawTableView.can_handle(np.zeros((4, 4), dtype=np.complex128)) is True
+
+
+def test_table_shows_complex_anomaly():
+    from npyquick.views.table import RawTableView
+    arr = np.array([[complex(np.nan, 0), 1 + 1j], [2 + 2j, complex(0, np.inf)]],
+                   dtype=np.complex128)
+    tv = RawTableView()
+    tv.set_data(arr)
+    assert "NaN: 1" in tv._info.text() and "+Inf: 1" in tv._info.text()

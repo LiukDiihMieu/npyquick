@@ -14,9 +14,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..core import complexproj, limits
-from ..core.stats import (
-    ArrayStats, array_stats, complex_anomaly_str, is_real_numeric,
-)
+from ..core.stats import ArrayStats, array_stats, is_real_numeric
 from .base import BaseView, ExportableMixin
 
 _BIN_OPTIONS = ["auto", "64", "128", "256", "512"]
@@ -307,28 +305,22 @@ class HistogramView(BaseView):
 
     def set_data(self, array: np.ndarray, stats: ArrayStats | None = None) -> None:
         self._canvas.set_clim_marker(None, None)  # reset; app.py syncs from ImageView
-        is_complex = np.issubdtype(array.dtype, np.complexfloating)
-        if is_complex:
+        if np.issubdtype(array.dtype, np.complexfloating):
             self._canvas.plot_complex(array, self._component)
         else:
             self._canvas.plot(array)  # samples once; stores _finite / _n_total / _n_used
 
         self._update_stats_label()
 
-        if is_complex:
-            # Field-level anomaly (NaN/Inf in either part), independent of the
-            # selected component, so it is set here and untouched by switches.
-            anomaly = complex_anomaly_str(array)
-            self._anomaly_label.setText(anomaly)
-            self._anomaly_label.setVisible(bool(anomaly))
+        # array_stats reports anomalies for complex too (field-level, independent
+        # of the selected component), so this path is shared with real arrays.
+        if stats is None:
+            stats = array_stats(array)
+        if stats is not None and stats.has_anomaly:
+            self._anomaly_label.setText(stats.anomaly_str())
+            self._anomaly_label.setVisible(True)
         else:
-            if stats is None:
-                stats = array_stats(array)
-            if stats is not None and stats.has_anomaly:
-                self._anomaly_label.setText(stats.anomaly_str())
-                self._anomaly_label.setVisible(True)
-            else:
-                self._anomaly_label.setVisible(False)
+            self._anomaly_label.setVisible(False)
 
         self._canvas.set_idle_status(self._status)
 

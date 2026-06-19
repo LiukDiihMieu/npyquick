@@ -63,7 +63,9 @@ def _format_array_summary(array: np.ndarray, stats: ArrayStats | None = None) ->
         if stats is None:
             stats = array_stats(array)
         if stats is not None:
-            parts.append(stats.range_str())
+            rng = stats.range_str()
+            if rng:  # empty for complex (no single ordered range)
+                parts.append(rng)
             if stats.has_anomaly:
                 parts.append(stats.anomaly_str())
     return "  |  ".join(parts)

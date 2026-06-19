@@ -16,9 +16,7 @@ from PySide6.QtWidgets import (
 from ..core import complexproj, limits
 from ..core.coord import PixelTransform
 from ..core.profile import compute_profile
-from ..core.stats import (
-    ArrayStats, array_stats, complex_anomaly_str, is_real_numeric,
-)
+from ..core.stats import ArrayStats, array_stats, is_real_numeric
 from .base import BaseView, ColormappedView, ExportableMixin, SpatialView
 
 
@@ -603,9 +601,7 @@ class ImageView(BaseView, SpatialView, ColormappedView):
             self._set_complex_mode(True)
             self._active = self._canvas
             self._norm_label.setVisible(False)
-            anomaly = complex_anomaly_str(array)
-            self._anomaly_label.setText(anomaly)
-            self._anomaly_label.setVisible(bool(anomaly))
+            self._show_anomaly(array, stats)
             for w in (self._vmin_edit, self._vmax_edit, self._apply_btn, self._reset_btn):
                 w.setEnabled(True)
             self._load_complex_panels()
@@ -624,6 +620,9 @@ class ImageView(BaseView, SpatialView, ColormappedView):
         else:
             self._norm_label.setText("")
             self._norm_label.setVisible(False)
+        self._show_anomaly(array, stats)
+
+    def _show_anomaly(self, array: np.ndarray, stats: ArrayStats | None) -> None:
         if stats is None:
             stats = array_stats(array)
         if stats is not None and stats.has_anomaly:
