@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QWidget,
 )
 
-from ..core import limits
+from ..core import complexproj, limits
 from ..core.stats import ArrayStats, array_stats, is_real_numeric
 from .base import BaseView, ExportableMixin
 
@@ -48,6 +48,8 @@ class HistogramCanvas(ExportableMixin, FigureCanvas):
         self._n_bins: int | str = "auto"
         self._log: bool = False
         self._array: np.ndarray | None = None
+        self._complex_sample: np.ndarray | None = None
+        self._component: str = complexproj.DEFAULT_HIST
         self._finite: np.ndarray | None = None
         self._n_total: int = 0
         self._n_used: int = 0
@@ -72,8 +74,31 @@ class HistogramCanvas(ExportableMixin, FigureCanvas):
 
     def plot(self, array: np.ndarray) -> None:
         self._array = array
+        self._complex_sample = None
         finite, self._n_total, self._n_used = finite_sample(array)
         self._finite = finite
+        self._render()
+
+    def plot_complex(self, array: np.ndarray, component: str) -> None:
+        # Sample the COMPLEX array first (a small view), then project — never
+        # project the whole array; see core/complexproj.
+        self._array = array
+        self._component = component
+        sample, self._n_total, self._n_used = limits.sampled_flat_view(
+            array, limits.HIST_MAX_SAMPLES
+        )
+        self._complex_sample = sample
+        self._apply_component()
+
+    def set_component(self, component: str) -> None:
+        if self._complex_sample is None:
+            return
+        self._component = component
+        self._apply_component()  # re-projects the cached sample; no re-sampling
+
+    def _apply_component(self) -> None:
+        projected = complexproj.project(self._complex_sample, self._component)
+        self._finite = projected[np.isfinite(projected)]
         self._render()
 
     def _render(self) -> None:
@@ -97,7 +122,13 @@ class HistogramCanvas(ExportableMixin, FigureCanvas):
             )
         else:
             bins = self._n_bins if self._n_bins == "auto" else int(self._n_bins)
-            counts, edges = np.histogram(finite, bins=bins)
+            try:
+                counts, edges = np.histogram(finite, bins=bins)
+            except ValueError:
+                # Near-constant data (e.g. unit-magnitude phase data) has a range
+                # too small to split into many finite-width bins; one bar is the
+                # honest result. (Exactly-constant data is handled by numpy.)
+                counts, edges = np.histogram(finite, bins=1)
             self._counts = counts
             self._edges = edges
             self._ax.bar(
@@ -206,6 +237,7 @@ class HistogramView(BaseView):
     def __init__(self) -> None:
         super().__init__()
         self._status: str = ""
+        self._component: str = complexproj.DEFAULT_HIST
         self._canvas = HistogramCanvas()
 
         _s = QSettings("npyquick", "npyquick")
@@ -274,12 +306,38 @@ class HistogramView(BaseView):
 
     @classmethod
     def can_handle(cls, array: np.ndarray) -> bool:
-        return is_real_numeric(array) and array.size > 0
+        numeric = is_real_numeric(array) or np.issubdtype(array.dtype, np.complexfloating)
+        return numeric and array.size > 0
 
     def set_data(self, array: np.ndarray, stats: ArrayStats | None = None) -> None:
         self._canvas.set_clim_marker(None, None)  # reset; app.py syncs from ImageView
-        self._canvas.plot(array)  # samples once; stores _finite / _n_total / _n_used
+        if np.issubdtype(array.dtype, np.complexfloating):
+            self._canvas.plot_complex(array, self._component)
+        else:
+            self._canvas.plot(array)  # samples once; stores _finite / _n_total / _n_used
 
+        self._update_stats_label()
+
+        # array_stats reports anomalies for complex too (field-level, independent
+        # of the selected component), so this path is shared with real arrays.
+        if stats is None:
+            stats = array_stats(array)
+        if stats is not None and stats.has_anomaly:
+            self._anomaly_label.setText(stats.anomaly_str())
+            self._anomaly_label.setVisible(True)
+        else:
+            self._anomaly_label.setVisible(False)
+
+        self._canvas.set_idle_status(self._status)
+
+    def set_component(self, component: str) -> None:
+        self._component = component
+        self._canvas.set_component(component)
+        self._update_stats_label()
+        self._canvas.set_idle_status(self._status)
+
+    def _update_stats_label(self) -> None:
+        arr = self._canvas._array
         finite = self._canvas._finite
         n_total = self._canvas._n_total
         n_used = self._canvas._n_used
@@ -305,19 +363,9 @@ class HistogramView(BaseView):
         else:
             self._sample_label.setVisible(False)
 
-        self._status = f"shape {array.shape}  dtype {array.dtype}  |  {stats_str}"
+        self._status = f"shape {arr.shape}  dtype {arr.dtype}  |  {stats_str}"
         if sampled:
             self._status += "  (sampled)"
-
-        if stats is None:
-            stats = array_stats(array)
-        if stats is not None and stats.has_anomaly:
-            self._anomaly_label.setText(stats.anomaly_str())
-            self._anomaly_label.setVisible(True)
-        else:
-            self._anomaly_label.setVisible(False)
-
-        self._canvas.set_idle_status(self._status)
 
     def update_clim_marker(self, vmin: float | None, vmax: float | None) -> None:
         self._canvas.update_clim_marker(vmin, vmax)

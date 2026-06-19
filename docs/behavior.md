@@ -32,6 +32,7 @@ The Image view supports:
 
 * 2D numeric arrays as grayscale images
 * `(H, W, 3)` numeric arrays as RGB images
+* 2D complex arrays, shown as two panels (real / imaginary or absolute value / argument)
 
 Other shapes are not shown in the Image view by default.
 
@@ -67,6 +68,12 @@ The display normalization depends on dtype and value range:
 
 The selected RGB normalization strategy is shown in the control bar.
 
+### Complex arrays
+
+A 2D complex array is shown as two side-by-side image panels. By default the panels show the real and imaginary parts (`Real`, `Imag`); a **Component** selector in the top bar switches them to absolute value (magnitude) and argument (phase), labelled `Abs` and `Angle`.
+
+The two panels share a single zoom/pan and a single cross-section line, so they always show the same region. Clicking a panel makes it the active one: the cross-section profile and the `vmin` / `vmax` controls then follow that panel, and the controls are labelled with its component. The `Angle` panel shows phase in radians and defaults to a fixed `(-π, π]` range. `Reset` restores both panels.
+
 ### Image interactions
 
 The Image view supports:
@@ -81,7 +88,7 @@ The cross-section is intended as a quick inspection tool, not as a replacement f
 
 ## Histogram view
 
-The Histogram view shows the value distribution of real numeric arrays.
+The Histogram view shows the value distribution of real numeric arrays. Complex arrays are also supported: a **Component** selector in the top bar chooses which real-valued component (`Real`, `Imag`, `Abs`, or `Angle`, default `Abs`) is histogrammed, and switching it re-bins that component.
 
 Supported inputs include:
 
@@ -89,8 +96,9 @@ Supported inputs include:
 * 2D arrays
 * RGB arrays
 * higher-dimensional real numeric arrays
+* complex arrays (via the component selector)
 
-NaN and Inf values are excluded from the histogram and reported separately.
+NaN and Inf values are excluded from the histogram and reported separately. For a complex array, a value counts as an anomaly when either its real or imaginary part is NaN or Inf.
 
 ### Histogram controls
 
@@ -149,7 +157,7 @@ The Table view is the fallback preview for arrays that are not naturally display
 Examples include:
 
 * higher-dimensional arrays
-* complex arrays
+* complex arrays that are not 2D
 * object arrays
 * scalar arrays
 * empty arrays
@@ -158,17 +166,6 @@ Examples include:
 To keep very large arrays usable, displayed rows and columns are capped.
 
 The current display cap is 10,000 rows and 10,000 columns. This cap only affects the table preview, not the original loaded array.
-
-## Complex arrays
-
-Complex arrays are currently shown through the Table view.
-
-Planned complex-array support may include derived real-valued views such as:
-
-* real part
-* imaginary part
-* magnitude
-* phase
 
 ## Performance notes
 
@@ -180,5 +177,6 @@ For very large arrays, the GUI may simplify the displayed representation by:
 * capping table rows and columns
 * excluding NaN / Inf values from histograms
 * using display normalization for RGB images
+* computing complex components only for the displayed (downsampled) data
 
 These choices are intended to keep preview interactions responsive while making the applied behavior visible to the user.

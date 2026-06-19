@@ -67,13 +67,14 @@ def test_table_model_scalar_data_is_value():
 
 
 # ---------------------------------------------------------------------------
-# ImageView.can_handle — complex arrays fall through to the Table view.
+# ImageView.can_handle — 2D complex is shown as a dual real/imag panel; complex
+# RGB is not supported (falls through to the Table view).
 # (Empty-array rejection lives in test_image_canvas.py alongside the rest of
 # the can_handle coverage.)
 # ---------------------------------------------------------------------------
 
-def test_image_rejects_complex_2d():
-    assert ImageView.can_handle(np.zeros((4, 4), dtype=np.complex128)) is False
+def test_image_accepts_complex_2d():
+    assert ImageView.can_handle(np.zeros((4, 4), dtype=np.complex128)) is True
 
 
 def test_image_rejects_complex_rgb():
@@ -87,3 +88,12 @@ def test_image_rejects_complex_rgb():
 def test_table_accepts_complex():
     from npyquick.views.table import RawTableView
     assert RawTableView.can_handle(np.zeros((4, 4), dtype=np.complex128)) is True
+
+
+def test_table_shows_complex_anomaly():
+    from npyquick.views.table import RawTableView
+    arr = np.array([[complex(np.nan, 0), 1 + 1j], [2 + 2j, complex(0, np.inf)]],
+                   dtype=np.complex128)
+    tv = RawTableView()
+    tv.set_data(arr)
+    assert "NaN: 1" in tv._info.text() and "+Inf: 1" in tv._info.text()

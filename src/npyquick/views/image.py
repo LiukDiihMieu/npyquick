@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QWidget,
 )
 
-from ..core import limits
+from ..core import complexproj, limits
 from ..core.coord import PixelTransform
 from ..core.profile import compute_profile
 from ..core.stats import ArrayStats, array_stats, is_real_numeric
@@ -28,6 +28,7 @@ class ProfileCanvas(ExportableMixin, FigureCanvas):
         self._ax = fig.add_subplot(111)
         super().__init__(fig)
         self._transform = PixelTransform()
+        self._ylabel = "Intensity"
         self._setup_axes()
         self._lines: list = []
         self.mpl_connect("button_press_event", self._on_press)
@@ -36,9 +37,16 @@ class ProfileCanvas(ExportableMixin, FigureCanvas):
         u = self._transform.format_unit()
         label = f"Distance ({u})" if u else "Distance"
         self._ax.set_xlabel(label)
-        self._ax.set_ylabel("Intensity")
+        self._ax.set_ylabel(self._ylabel)
         self._ax.set_title("Cross Section Profile")
         self._ax.grid(True, alpha=0.3)
+
+    def set_ylabel(self, label: str) -> None:
+        # Complex mode labels the profile with the active component
+        # ("Real"/"Imag"/"Abs"/"Angle") instead of the generic "Intensity".
+        self._ylabel = label
+        self._ax.set_ylabel(label)
+        self.draw_idle()
 
     def set_pixel_size(self, ps: float, unit: str) -> None:
         new_t = PixelTransform(ps, unit)
@@ -88,12 +96,20 @@ class ImageCanvas(ExportableMixin, FigureCanvas):
     _HIT_RADIUS = 12
     panel_name = "Image"
 
-    def __init__(self, profile: ProfileCanvas) -> None:
+    def __init__(self, profile: ProfileCanvas | None = None) -> None:
         self._fig = Figure(layout="compressed")
         super().__init__(self._fig)
         self._ax = self._fig.add_subplot(111)
         self._profile = profile
         self._on_status: Callable = lambda _: None
+        # Hooks for the complex dual-panel mode (no-ops in the single-canvas
+        # real path, so ImageView behaves exactly as before). _on_view_changed
+        # drives continuous-linked zoom; _on_endpoints_changed drives the shared
+        # cross-section. _last_profile lets an owner read the profile this canvas
+        # would draw without owning a ProfileCanvas.
+        self._on_view_changed: Callable = lambda _: None
+        self._on_endpoints_changed: Callable = lambda _: None
+        self._last_profile: tuple | None = None
         self._data: np.ndarray | None = None      # full resolution (may be a memmap)
         self._disp: np.ndarray | None = None       # float display array (maybe downsampled)
         self._stride: int = 1                      # full-res pixels per display pixel
@@ -116,7 +132,12 @@ class ImageCanvas(ExportableMixin, FigureCanvas):
     def set_on_status(self, cb: Callable) -> None:
         self._on_status = cb
 
-    def load(self, data: np.ndarray) -> tuple[str | None, str | None]:
+    def load(
+        self, data: np.ndarray, projector: Callable | None = None
+    ) -> tuple[str | None, str | None]:
+        # projector maps a (strided) complex array to a real one. Applying it
+        # AFTER striding keeps a large complex memmap from fully materializing —
+        # see core/complexproj. _data stays complex; _disp is the real display.
         self._data = data
         self._rgb = data.ndim == 3
         self._fig.clear()
@@ -137,6 +158,9 @@ class ImageCanvas(ExportableMixin, FigureCanvas):
             downsample_str = f"downsampled {h}×{w} → {dh}×{dw}  (1/{s})"
         else:
             sub = data
+
+        if projector is not None:
+            sub = projector(sub)
 
         extent = self._transform.extent(h, w)
         norm_str: str | None = None
@@ -210,6 +234,9 @@ class ImageCanvas(ExportableMixin, FigureCanvas):
                 ch = "RGBA"[: self._data.shape[2]]
                 vals = "  ".join(f"{c}={v[i]:.4g}" for i, c in enumerate(ch))
                 parts.append(f"{coord}  {vals}")
+            elif np.iscomplexobj(self._data):
+                v = self._data[y, x]
+                parts.append(f"{coord}  val={v.real:.4g}{v.imag:+.4g}j")
             else:
                 parts.append(f"{coord}  val={self._data[y, x]:.4g}")
         if self._data is not None:
@@ -251,7 +278,49 @@ class ImageCanvas(ExportableMixin, FigureCanvas):
         s = self._stride
         p0_px, p1_px = self._transform.to_pixel(self._endpoints)
         dists, values = compute_profile(self._disp, p0_px / s, p1_px / s)
-        self._profile.set_profile(dists * s, values)
+        self._last_profile = (dists * s, values)
+        if self._profile is not None:
+            self._profile.set_profile(dists * s, values)
+
+    # ------------------------------------------------------------------
+    # View / endpoint hooks (used by the complex dual-panel mode)
+    # ------------------------------------------------------------------
+
+    def set_on_view_changed(self, cb: Callable) -> None:
+        self._on_view_changed = cb
+
+    def set_on_endpoints_changed(self, cb: Callable) -> None:
+        self._on_endpoints_changed = cb
+
+    def get_view(self) -> tuple[tuple, tuple]:
+        return self._ax.get_xlim(), self._ax.get_ylim()
+
+    def set_view(self, xlim, ylim) -> None:
+        # Silent mirror sink: sets limits without firing _on_view_changed, so a
+        # user zoom on one panel updates the other without an A->B->A echo.
+        self._ax.set_xlim(xlim)
+        self._ax.set_ylim(ylim)
+        self.draw_idle()
+
+    def _apply_view(self, xlim, ylim) -> None:
+        self._ax.set_xlim(xlim)
+        self._ax.set_ylim(ylim)
+        self.draw_idle()
+        self._on_view_changed(self)
+
+    def get_endpoints(self) -> np.ndarray:
+        return self._endpoints.copy()
+
+    def set_endpoints(self, eps) -> None:
+        # Silent: mirror an owner-supplied cross-section without firing back.
+        self._endpoints = np.asarray(eps, dtype=float).copy()
+        if self._cs_line is not None:
+            self._sync_artists()
+        self._refresh_profile()
+        self.draw_idle()
+
+    def profile_data(self) -> tuple | None:
+        return self._last_profile
 
     # ------------------------------------------------------------------
     # Mouse interaction
@@ -269,9 +338,7 @@ class ImageCanvas(ExportableMixin, FigureCanvas):
             return
         h, w = self._data.shape[:2]
         x0, x1, y0_bot, y1_top = self._transform.extent(h, w)
-        self._ax.set_xlim(x0, x1)
-        self._ax.set_ylim(y0_bot, y1_top)
-        self.draw_idle()
+        self._apply_view((x0, x1), (y0_bot, y1_top))
 
     def _on_axes_leave(self, ev) -> None:
         self._hover = None
@@ -295,9 +362,7 @@ class ImageCanvas(ExportableMixin, FigureCanvas):
         if xl[0] >= xl[1] or yl[1] >= yl[0]:
             self._reset_zoom()
             return
-        self._ax.set_xlim(xl)
-        self._ax.set_ylim(yl)
-        self.draw_idle()
+        self._apply_view(xl, yl)
 
     def _on_press(self, ev) -> None:
         # Any click anywhere on this canvas selects it as the export target.
@@ -341,6 +406,7 @@ class ImageCanvas(ExportableMixin, FigureCanvas):
             self._sync_artists()
             self._refresh_profile()
             self.draw_idle()
+            self._on_endpoints_changed(self)
         elif self._pan_start is not None:
             x0_px, y0_px, xlim0, ylim0, inv0 = self._pan_start
             p0 = inv0.transform([x0_px, y0_px])
@@ -359,9 +425,7 @@ class ImageCanvas(ExportableMixin, FigureCanvas):
                 yl = [y_top + span_y, y_top]
             elif yl[0] > y_bot:
                 yl = [y_bot, y_bot - span_y]
-            self._ax.set_xlim(xl)
-            self._ax.set_ylim(yl)
-            self.draw_idle()
+            self._apply_view(xl, yl)
 
         self._on_status(self.status_str())
 
@@ -376,7 +440,8 @@ class ImageCanvas(ExportableMixin, FigureCanvas):
             return
         old_t = self._transform
         self._transform = new_t
-        self._profile.set_pixel_size(ps, unit)
+        if self._profile is not None:
+            self._profile.set_pixel_size(ps, unit)
         if self._data is None:
             return
         h, w = self._data.shape[:2]
@@ -407,7 +472,10 @@ class ImageCanvas(ExportableMixin, FigureCanvas):
     def reset_clim(self) -> None:
         if self._im is None or self._rgb or self._data is None:
             return
-        stats = array_stats(self._data)
+        # _data is complex in the dual-panel mode; array_stats rejects complex,
+        # so reset from the already-projected real display instead.
+        source = self._disp if np.iscomplexobj(self._data) else self._data
+        stats = array_stats(source)
         if stats is None or stats.finite_min is None:
             return  # all-NaN/Inf: nothing sensible to reset to
         self._im.set_clim(stats.finite_min, stats.finite_max)
@@ -421,11 +489,42 @@ class ImageView(BaseView, SpatialView, ColormappedView):
     def __init__(self) -> None:
         super().__init__()
         self._on_clim_change: Callable = lambda vmin, vmax: None
+        self._app_selected_cb: Callable = lambda _: None
+        self._array: np.ndarray | None = None
+        self._complex = False
+        self._pair = complexproj.DEFAULT_PAIR
+        self._comp_a, self._comp_b = complexproj.IMAGE_PAIRS[self._pair]
+
         self._profile = ProfileCanvas()
         self._canvas = ImageCanvas(self._profile)
+        self._canvas_b = ImageCanvas()      # second panel, shown only for complex
+        self._canvas_b.setVisible(False)
+        self._active: ImageCanvas = self._canvas
+        # Continuous-linked zoom + shared cross-section between the two panels
+        # (no-ops until complex mode, since _canvas_b stays hidden/empty).
+        self._canvas.set_on_view_changed(
+            lambda c: self._complex and self._canvas_b.set_view(*c.get_view()))
+        self._canvas_b.set_on_view_changed(
+            lambda c: self._complex and self._canvas.set_view(*c.get_view()))
+        self._canvas.set_on_endpoints_changed(self._on_endpoints_dragged)
+        self._canvas_b.set_on_endpoints_changed(self._on_endpoints_dragged)
+
+        # Inner splitter holds the two image panels; the outer splitter pairs
+        # that with the profile. Keeping the outer two-pane splitter lets the
+        # existing image_profile_splitter setting restore unchanged.
+        self._panels = QSplitter(Qt.Horizontal)
+        self._panels.addWidget(self._canvas)
+        self._panels.addWidget(self._canvas_b)
+        _ps = QSettings("npyquick", "npyquick").value("image_panels_splitter")
+        self._panels.setSizes([int(x) for x in _ps] if _ps else [480, 480])
+        self._panels.splitterMoved.connect(
+            lambda *_: QSettings("npyquick", "npyquick").setValue(
+                "image_panels_splitter", self._panels.sizes()
+            )
+        )
 
         sp = QSplitter(Qt.Horizontal)
-        sp.addWidget(self._canvas)
+        sp.addWidget(self._panels)
         sp.addWidget(self._profile)
         _saved = QSettings("npyquick", "npyquick").value("image_profile_splitter")
         sp.setSizes([int(x) for x in _saved] if _saved else [780, 480])
@@ -448,6 +547,10 @@ class ImageView(BaseView, SpatialView, ColormappedView):
         self._apply_btn.clicked.connect(self._apply_clim)
         self._reset_btn.clicked.connect(self._reset_clim)
 
+        # In complex mode, names which component's clim the edits show/edit.
+        self._clim_prefix_label = QLabel()
+        self._clim_prefix_label.setVisible(False)
+
         self._downsample_label = QLabel()
         self._downsample_label.setStyleSheet("color: #b8860b;")
         self._downsample_label.setVisible(False)
@@ -462,6 +565,7 @@ class ImageView(BaseView, SpatialView, ColormappedView):
         ctrl.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         ctrl_layout = QHBoxLayout(ctrl)
         ctrl_layout.setContentsMargins(6, 3, 6, 3)
+        ctrl_layout.addWidget(self._clim_prefix_label)
         ctrl_layout.addWidget(QLabel("vmin:"))
         ctrl_layout.addWidget(self._vmin_edit)
         ctrl_layout.addWidget(QLabel("vmax:"))
@@ -484,21 +588,29 @@ class ImageView(BaseView, SpatialView, ColormappedView):
         if array.size == 0:
             return False
         if array.ndim == 2:
-            return is_real_numeric(array)
+            return is_real_numeric(array) or np.issubdtype(array.dtype, np.complexfloating)
         if array.ndim == 3 and array.shape[2] == 3:
             return is_real_numeric(array)
         return False
 
     def set_data(self, array: np.ndarray, stats: ArrayStats | None = None) -> None:
-        norm_str, downsample_str = self._canvas.load(array)
-        if downsample_str is not None:
-            self._downsample_label.setText(downsample_str)
-            self._downsample_label.setVisible(True)
-        else:
-            self._downsample_label.setText("")
-            self._downsample_label.setVisible(False)
+        self._array = array
         self._vmin_edit.clear()
         self._vmax_edit.clear()
+        if np.issubdtype(array.dtype, np.complexfloating):
+            self._set_complex_mode(True)
+            self._active = self._canvas
+            self._norm_label.setVisible(False)
+            self._show_anomaly(array, stats)
+            for w in (self._vmin_edit, self._vmax_edit, self._apply_btn, self._reset_btn):
+                w.setEnabled(True)
+            self._load_complex_panels()
+            return
+
+        self._set_complex_mode(False)
+        self._active = self._canvas
+        norm_str, downsample_str = self._canvas.load(array)
+        self._show_downsample(downsample_str)
         rgb = array.ndim == 3
         for w in (self._vmin_edit, self._vmax_edit, self._apply_btn, self._reset_btn):
             w.setEnabled(not rgb)
@@ -508,6 +620,9 @@ class ImageView(BaseView, SpatialView, ColormappedView):
         else:
             self._norm_label.setText("")
             self._norm_label.setVisible(False)
+        self._show_anomaly(array, stats)
+
+    def _show_anomaly(self, array: np.ndarray, stats: ArrayStats | None) -> None:
         if stats is None:
             stats = array_stats(array)
         if stats is not None and stats.has_anomaly:
@@ -519,22 +634,36 @@ class ImageView(BaseView, SpatialView, ColormappedView):
 
     def set_pixel_size(self, ps: float, unit: str) -> None:
         self._canvas.set_pixel_size(ps, unit)
+        if self._complex:
+            self._canvas_b.set_pixel_size(ps, unit)
+            self._profile.set_pixel_size(ps, unit)
+            self._refresh_profile_from_active()
 
     def set_colormap(self, name: str) -> None:
         self._canvas.set_colormap(name)
+        self._canvas_b.set_colormap(name)
 
     def set_on_status(self, cb: Callable) -> None:
         super().set_on_status(cb)
         self._canvas.set_on_status(cb)
+        self._canvas_b.set_on_status(cb)
 
     def set_on_canvas_selected(self, cb: Callable) -> None:
-        self._canvas.set_on_selected(cb)
+        # A click both sets the export target (existing behavior) and marks the
+        # active panel — one mechanism via _on_canvas_clicked.
+        self._app_selected_cb = cb
+        self._canvas.set_on_selected(self._on_canvas_clicked)
+        self._canvas_b.set_on_selected(self._on_canvas_clicked)
         self._profile.set_on_selected(cb)
 
     def refresh_status(self) -> None:
-        self._on_status(self._canvas.status_str())
+        self._on_status(self._active.status_str())
 
     def export_targets(self):
+        if self._complex:
+            return [(self._comp_a, self._canvas.export_figure),
+                    (self._comp_b, self._canvas_b.export_figure),
+                    ("Profile", self._profile.export_figure)]
         return [("Image", self._canvas.export_figure),
                 ("Profile", self._profile.export_figure)]
 
@@ -542,7 +671,9 @@ class ImageView(BaseView, SpatialView, ColormappedView):
         self._on_clim_change = cb
 
     def get_clim(self) -> tuple[float | None, float | None]:
-        if self._canvas._im is None or self._canvas._rgb:
+        # Complex panels carry per-component clim that must not drive the single
+        # histogram clim marker, so report none in that mode.
+        if self._complex or self._canvas._im is None or self._canvas._rgb:
             return None, None
         return self._canvas._im.get_clim()
 
@@ -550,7 +681,7 @@ class ImageView(BaseView, SpatialView, ColormappedView):
         try:
             vmin = float(self._vmin_edit.text()) if self._vmin_edit.text() else None
             vmax = float(self._vmax_edit.text()) if self._vmax_edit.text() else None
-            self._canvas.set_clim(vmin, vmax)
+            self._active.set_clim(vmin, vmax)
             self._on_clim_change(*self.get_clim())
         except ValueError:
             pass
@@ -558,6 +689,93 @@ class ImageView(BaseView, SpatialView, ColormappedView):
     def _reset_clim(self) -> None:
         self._vmin_edit.clear()
         self._vmax_edit.clear()
-        self._canvas.reset_clim()
-        self._on_clim_change(*self.get_clim())
+        if self._complex:
+            # Reset both panels; Angle always returns to its natural (-pi, pi].
+            for canvas, comp in ((self._canvas, self._comp_a), (self._canvas_b, self._comp_b)):
+                if comp == "Angle":
+                    canvas.set_clim(-np.pi, np.pi)
+                else:
+                    canvas.reset_clim()
+            self._sync_clim_controls()
+        else:
+            self._canvas.reset_clim()
+            self._on_clim_change(*self.get_clim())
+
+    # ------------------------------------------------------------------
+    # Complex dual-panel mode
+    # ------------------------------------------------------------------
+
+    def _show_downsample(self, s: str | None) -> None:
+        self._downsample_label.setText(s or "")
+        self._downsample_label.setVisible(bool(s))
+
+    def _set_complex_mode(self, on: bool) -> None:
+        self._complex = on
+        self._canvas_b.setVisible(on)
+        # The view owns the single profile (from the active panel) in complex
+        # mode; detach the primary canvas's direct push so it can't clobber it.
+        self._canvas._profile = None if on else self._profile
+        self._clim_prefix_label.setVisible(on)
+        if not on:
+            self._profile.set_ylabel("Intensity")
+
+    def _load_complex_panels(self) -> None:
+        arr = self._array
+        a, b = self._comp_a, self._comp_b
+        _, ds = self._canvas.load(arr, lambda s: complexproj.project(s, a))
+        self._canvas_b.load(arr, lambda s: complexproj.project(s, b))
+        for canvas, comp in ((self._canvas, a), (self._canvas_b, b)):
+            if comp == "Angle":
+                canvas.set_clim(-np.pi, np.pi)
+        self._canvas_b.set_endpoints(self._canvas.get_endpoints())
+        self._show_downsample(ds)
+        self._refresh_profile_from_active()
+        self._sync_clim_controls()
+
+    def set_pair(self, pair_key: str) -> None:
+        if pair_key not in complexproj.IMAGE_PAIRS:
+            return
+        if pair_key == self._pair and self._complex and self._array is not None:
+            return  # already showing this pair; avoid a redundant reload
+        self._pair = pair_key
+        self._comp_a, self._comp_b = complexproj.IMAGE_PAIRS[pair_key]
+        if self._complex and self._array is not None:
+            self._load_complex_panels()
+
+    def _on_endpoints_dragged(self, canvas: ImageCanvas) -> None:
+        if not self._complex:
+            return
+        other = self._canvas_b if canvas is self._canvas else self._canvas
+        other.set_endpoints(canvas.get_endpoints())   # silent mirror
+        self._refresh_profile_from_active()
+
+    def _set_active(self, canvas: ImageCanvas) -> None:
+        self._active = canvas
+        if self._complex:
+            self._refresh_profile_from_active()
+            self._sync_clim_controls()
+
+    def _on_canvas_clicked(self, canvas: ImageCanvas) -> None:
+        self._set_active(canvas)
+        self._app_selected_cb(canvas)
+
+    def _active_component_name(self) -> str:
+        return self._comp_a if self._active is self._canvas else self._comp_b
+
+    def _refresh_profile_from_active(self) -> None:
+        pd = self._active.profile_data()
+        if pd is None:
+            return
+        dists, values = pd
+        self._profile.set_profile(dists, values)
+        self._profile.set_ylabel(self._active_component_name())
+
+    def _sync_clim_controls(self) -> None:
+        comp = self._active_component_name()
+        self._clim_prefix_label.setText(comp)
+        im = self._active._im
+        if im is not None:
+            vmin, vmax = im.get_clim()
+            self._vmin_edit.setText(f"{vmin:.4g}")
+            self._vmax_edit.setText(f"{vmax:.4g}")
 
