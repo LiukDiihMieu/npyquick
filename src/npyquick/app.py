@@ -4,10 +4,11 @@
 from __future__ import annotations
 
 import os
-from importlib.metadata import PackageNotFoundError, version
+import sys
+from collections.abc import Callable
 
 import numpy as np
-from PySide6.QtCore import Qt, QSettings, QUrl
+from PySide6.QtCore import QKeyCombination, Qt, QSettings, QUrl
 from PySide6.QtGui import QAction, QActionGroup, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
@@ -24,6 +25,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from . import __version__
+from .core import complexproj
 from .core.stats import ArrayStats, array_stats
 from .model import NpyDataModel
 from .views.base import ColormappedView, ExportableMixin, SpatialView
@@ -42,6 +45,56 @@ def _kbd(seq: str) -> str:
     return QKeySequence(seq).toString(QKeySequence.NativeText)
 
 
+def _tab_switch_sequences(
+    platform: str = sys.platform,
+) -> tuple[list[QKeySequence], list[QKeySequence]]:
+    """Return (next-tab, previous-tab) key sequences for the given platform.
+
+    Shift+Tab reaches Qt as Qt.Key_Backtab with the Shift consumed, so the
+    "previous" sequences use Key_Backtab without a Shift modifier (QTBUG-8010).
+
+    macOS (issue #26): Qt maps Qt.ControlModifier to Command (⌘) and
+    Qt.MetaModifier to the physical Control key. StandardKey.NextChild would
+    land on ⌘+Tab, which the OS reserves for app switching, so we bind the
+    physical-Control combos (Ctrl+Tab / Ctrl+Shift+Tab) plus the Safari-style
+    ⌘+Shift+] / ⌘+Shift+[ instead.
+
+    Linux/Windows (issue #25): Ctrl+Tab works as the standard key; Ctrl+Backtab
+    is the form Qt actually delivers for Ctrl+Shift+Tab.
+    """
+    if platform == "darwin":
+        ctrl = Qt.KeyboardModifier.MetaModifier       # physical Control on macOS
+        cmd = Qt.KeyboardModifier.ControlModifier     # ⌘ on macOS
+        shift = Qt.KeyboardModifier.ShiftModifier
+        next_seqs = [
+            QKeySequence(QKeyCombination(ctrl, Qt.Key.Key_Tab)),
+            QKeySequence(QKeyCombination(cmd | shift, Qt.Key.Key_BracketRight)),
+        ]
+        prev_seqs = [
+            QKeySequence(QKeyCombination(ctrl, Qt.Key.Key_Backtab)),
+            QKeySequence(QKeyCombination(cmd | shift, Qt.Key.Key_BracketLeft)),
+        ]
+        return next_seqs, prev_seqs
+
+    return (
+        [QKeySequence(QKeySequence.StandardKey.NextChild)],  # Ctrl+Tab
+        [QKeySequence("Ctrl+Backtab")],
+    )
+
+
+def _apply_canvas_theme() -> None:
+    # Qt themes the window chrome in dark mode, but matplotlib figures stay white
+    # and glare against it (issue #19). When the OS reports a dark color scheme
+    # (Qt 6.5+ styleHints), switch to matplotlib's built-in "dark_background"
+    # style so the canvas turns dark too. Unknown (some platforms don't report a
+    # scheme) is treated as light, keeping the default canvas. Must run before
+    # any Figure is constructed, so _build_central() calls it first.
+    if QApplication.instance().styleHints().colorScheme() != Qt.ColorScheme.Dark:
+        return
+    import matplotlib.pyplot as plt
+    plt.style.use("dark_background")
+
+
 def _format_array_summary(array: np.ndarray, stats: ArrayStats | None = None) -> str:
     parts = [f"shape {array.shape}", f"dtype {array.dtype}"]
     if array.size == 0:
@@ -50,7 +103,9 @@ def _format_array_summary(array: np.ndarray, stats: ArrayStats | None = None) ->
         if stats is None:
             stats = array_stats(array)
         if stats is not None:
-            parts.append(stats.range_str())
+            rng = stats.range_str()
+            if rng:  # empty for complex (no single ordered range)
+                parts.append(rng)
             if stats.has_anomaly:
                 parts.append(stats.anomaly_str())
     return "  |  ".join(parts)
@@ -80,10 +135,13 @@ class MainWindow(QMainWindow):
         self._build_menu()
         self._build_central()
 
-        next_tab_sc = QShortcut(QKeySequence("Ctrl+Tab"), self)
-        next_tab_sc.activated.connect(self._next_tab)
-        prev_tab_sc = QShortcut(QKeySequence("Ctrl+Shift+Tab"), self)
-        prev_tab_sc.activated.connect(self._prev_tab)
+        # Tab switching. The sequences are platform-specific (see
+        # _tab_switch_sequences); macOS needs different ones to dodge ⌘+Tab.
+        next_seqs, prev_seqs = _tab_switch_sequences()
+        self._tab_shortcuts = [
+            *(self._bind_shortcut(seq, self._next_tab) for seq in next_seqs),
+            *(self._bind_shortcut(seq, self._prev_tab) for seq in prev_seqs),
+        ]
 
         self._sb.showMessage(f"File › Open  ({_kbd('Ctrl+O')})  to load a .npy or .npz file.")
 
@@ -101,12 +159,14 @@ class MainWindow(QMainWindow):
         self._export_actions: list = []
 
         open_a = QAction("&Open…", self)
-        open_a.setShortcut("Ctrl+O")
+        open_a.setShortcut(QKeySequence.StandardKey.Open)
         open_a.triggered.connect(self.open_file)
         fm.addAction(open_a)
 
         reload_a = QAction("&Reload", self)
-        reload_a.setShortcuts([QKeySequence("Ctrl+R"), QKeySequence("F5")])
+        # setShortcuts (plural) applies every platform binding for the key —
+        # e.g. Ctrl+R and F5 on GNOME, F5 alone on Windows/macOS.
+        reload_a.setShortcuts(QKeySequence.StandardKey.Refresh)
         reload_a.triggered.connect(self._reload_file)
         reload_a.setEnabled(False)
         fm.addAction(reload_a)
@@ -124,7 +184,7 @@ class MainWindow(QMainWindow):
 
         fm.addSeparator()
         quit_a = QAction("&Quit", self)
-        quit_a.setShortcut("Ctrl+Q")
+        quit_a.setShortcut(QKeySequence.StandardKey.Quit)
         quit_a.triggered.connect(self.close)
         fm.addAction(quit_a)
         self._quit_action = quit_a
@@ -180,14 +240,10 @@ class MainWindow(QMainWindow):
         hm.addAction(about_a)
 
     def _show_about(self) -> None:
-        try:
-            ver = version("npyquick")
-        except PackageNotFoundError:
-            ver = "unknown"
         QMessageBox.about(
             self,
             "About npyquick",
-            f"<h3>npyquick {ver}</h3>"
+            f"<h3>npyquick {__version__}</h3>"
             "<p>Quick viewer for NumPy .npy and .npz files.</p>"
             f'<p><a href="{REPO_URL}">GitHub repository</a><br>'
             f'<a href="{REPO_URL}/issues">Report an issue</a></p>'
@@ -195,6 +251,7 @@ class MainWindow(QMainWindow):
         )
 
     def _build_central(self) -> None:
+        _apply_canvas_theme()  # before any view constructs its matplotlib Figure
         self._image_view = ImageView()
         self._lineplot_view = LineplotView()
         self._table_view = RawTableView()
@@ -239,12 +296,31 @@ class MainWindow(QMainWindow):
         # index. currentIndexChanged would silently skip the first item if the
         # combo already rested on index 0 after npz population.
         self._array_combo.activated.connect(self._on_array_selected)
+
+        # Complex-component selector; shares the top bar with the array picker.
+        # Tab-contextual: a Real/Imag <-> Abs/Angle pair on the Image tab, the
+        # four single components on the Histogram tab (populated in
+        # _update_top_bar). Hidden for real arrays.
+        self._image_pair = complexproj.DEFAULT_PAIR
+        self._hist_component = complexproj.DEFAULT_HIST
+        self._has_npz_picker = False
+        self._array_label = QLabel("Array:")
+        self._component_label = QLabel("Component:")
+        self._component_combo = QComboBox()
+        self._component_combo.setSizeAdjustPolicy(QComboBox.AdjustToContents)
+        self._component_combo.activated.connect(self._on_component_selected)
+
         self._array_bar = QWidget()
         bar_layout = QHBoxLayout(self._array_bar)
         bar_layout.setContentsMargins(6, 2, 6, 2)
-        bar_layout.addWidget(QLabel("Array:"))
+        bar_layout.addWidget(self._array_label)
         bar_layout.addWidget(self._array_combo)
+        bar_layout.addSpacing(16)
+        bar_layout.addWidget(self._component_label)
+        bar_layout.addWidget(self._component_combo)
         bar_layout.addStretch()
+        self._component_label.setVisible(False)
+        self._component_combo.setVisible(False)
         self._array_bar.setVisible(False)
 
         container = QWidget()
@@ -279,7 +355,37 @@ class MainWindow(QMainWindow):
                 return
         self._reset_selected_export_target()
         self._stack.setCurrentIndex(index)
+        self._update_top_bar()  # component selector is tab-contextual
         self._views[index].refresh_status()
+
+    def _update_top_bar(self) -> None:
+        array = self._model.array
+        is_complex = array is not None and np.issubdtype(array.dtype, np.complexfloating)
+        current = self._stack.currentWidget()
+        self._component_combo.blockSignals(True)
+        self._component_combo.clear()
+        show_component = is_complex and current in (self._image_view, self._histogram_view)
+        if show_component and current is self._image_view:
+            self._component_combo.addItems(list(complexproj.IMAGE_PAIRS))
+            self._component_combo.setCurrentText(self._image_pair)
+        elif show_component:
+            self._component_combo.addItems(complexproj.component_names())
+            self._component_combo.setCurrentText(self._hist_component)
+        self._component_combo.blockSignals(False)
+        self._component_label.setVisible(show_component)
+        self._component_combo.setVisible(show_component)
+        self._array_label.setVisible(self._has_npz_picker)
+        self._array_combo.setVisible(self._has_npz_picker)
+        self._array_bar.setVisible(self._has_npz_picker or show_component)
+
+    def _on_component_selected(self, index: int) -> None:
+        text = self._component_combo.itemText(index)
+        if self._stack.currentWidget() is self._image_view:
+            self._image_pair = text
+            self._image_view.set_pair(text)
+        elif self._stack.currentWidget() is self._histogram_view:
+            self._hist_component = text
+            self._histogram_view.set_component(text)
 
     def _set_tabs_enabled(self, compatible: list[str], preferred: str | None = None) -> None:
         for i, v in enumerate(self._views):
@@ -335,7 +441,8 @@ class MainWindow(QMainWindow):
             # the first one — will fire the activated signal.
             self._array_combo.setCurrentIndex(-1)
             self._array_combo.blockSignals(False)
-            self._array_bar.setVisible(True)
+            self._has_npz_picker = True
+            self._update_top_bar()
             self._set_tabs_enabled([])
             self._show_empty("Select an array from the dropdown above")
             n = len(metas)
@@ -344,8 +451,9 @@ class MainWindow(QMainWindow):
                 "  — select one above to view"
             )
         else:
-            # .npy: single array, no picker needed.
-            self._array_bar.setVisible(False)
+            # .npy: single array, no member picker (a complex array may still
+            # surface the component selector via _update_top_bar).
+            self._has_npz_picker = False
             self._refresh_views()
         return True
 
@@ -360,6 +468,12 @@ class MainWindow(QMainWindow):
         for v in self._views:
             if v.VIEW_ID in compatible:
                 v.set_data(array, stats)
+        # Sync complex views to the remembered component selections.
+        if np.issubdtype(array.dtype, np.complexfloating):
+            if self._image_view.can_handle(array):
+                self._image_view.set_pair(self._image_pair)
+            if self._histogram_view.can_handle(array):
+                self._histogram_view.set_component(self._hist_component)
         if self._image_view.can_handle(array):
             self._histogram_view.update_clim_marker(*self._image_view.get_clim())
         else:
@@ -369,6 +483,7 @@ class MainWindow(QMainWindow):
         self._apply_colormap(self._colormap)
         preferred = "lineplot" if self._lineplot_view.can_handle(array) else None
         self._set_tabs_enabled(compatible, preferred)
+        self._update_top_bar()
         self._sb.showMessage(
             f"{os.path.basename(self._current_path)}  |  {_format_array_summary(array, stats)}"
         )
@@ -387,6 +502,11 @@ class MainWindow(QMainWindow):
     def _reload_file(self) -> None:
         if self._current_path and self.load_file(self._current_path):
             self._sb.showMessage("File reloaded", 3000)
+
+    def _bind_shortcut(self, seq: QKeySequence, slot: Callable[[], None]) -> QShortcut:
+        sc = QShortcut(seq, self)
+        sc.activated.connect(slot)
+        return sc
 
     def _next_tab(self) -> None:
         if not self._tabs.isVisible():
@@ -503,7 +623,7 @@ class MainWindow(QMainWindow):
         if self._selected_export_target is None:
             self._sb.showMessage(f"Click a plot first, then press {_kbd('Ctrl+S')} to export", 2500)
             return
-        self._selected_export_target._export_figure()
+        self._selected_export_target.export_figure()
 
     def _copy_selected(self) -> None:
         if not self._has_data():
@@ -512,7 +632,7 @@ class MainWindow(QMainWindow):
         if self._selected_export_target is None:
             self._sb.showMessage(f"Click a plot first, then press {_kbd('Ctrl+C')} to copy", 2500)
             return
-        self._selected_export_target._copy_to_clipboard()
+        self._selected_export_target.copy_to_clipboard()
 
     def dragEnterEvent(self, ev) -> None:
         urls = ev.mimeData().urls()

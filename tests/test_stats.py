@@ -25,14 +25,34 @@ def test_is_real_numeric_rejects_complex():
 def test_is_real_numeric_rejects_string():
     assert not is_real_numeric(np.array(["a", "b"]))
 
-def test_array_stats_complex_returns_none():
+def test_array_stats_complex_finite_has_no_range_or_anomaly():
     arr = np.array([1+2j, 3+4j], dtype=np.complex128)
-    assert array_stats(arr) is None
+    s = array_stats(arr)
+    assert s is not None
+    assert s.complex_dtype is True
+    assert s.finite_min is None and s.finite_max is None
+    assert not s.has_anomaly
+    assert s.range_str() == ""  # complex has no single ordered range
 
-def test_array_stats_complex_does_not_raise():
-    arr = np.array([[1+2j, 3+4j], [5+6j, 7+8j]], dtype=np.complex128)
-    result = array_stats(arr)
-    assert result is None
+def test_array_stats_complex_splits_pos_neg_inf():
+    arr = np.array([complex(np.nan, 0), complex(np.inf, 1), complex(1, -np.inf)],
+                   dtype=np.complex128)
+    s = array_stats(arr)
+    assert (s.nan_count, s.pos_inf_count, s.neg_inf_count) == (1, 1, 1)
+    assert s.anomaly_str() == "NaN: 1  +Inf: 1  -Inf: 1"
+
+
+def test_summary_shows_complex_anomaly_without_range():
+    # The status bar (shown on every tab, incl. Table) must surface complex
+    # anomalies the same way as real arrays, and not claim "no finite values".
+    arr = np.array([[complex(np.nan, 0), 1 + 1j], [2 + 2j, complex(np.inf, 0)]],
+                   dtype=np.complex128)
+    summary = _format_array_summary(arr)
+    assert "NaN: 1" in summary and "+Inf: 1" in summary
+    assert "no finite values" not in summary
+
+    clean = _format_array_summary(np.array([1 + 2j, 3 + 4j], dtype=np.complex128))
+    assert "no finite values" not in clean and "NaN" not in clean
 
 
 def test_integer_array_no_anomaly():

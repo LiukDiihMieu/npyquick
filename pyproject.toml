@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "npyquick"
-version = "0.1.2"
+dynamic = ["version"]
 description = "Quick GUI viewer for .npy / .npz arrays with image, table, and cross-section views"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -15,6 +15,8 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Operating System :: OS Independent",
     "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
     "Topic :: Scientific/Engineering :: Visualization",
@@ -40,6 +42,11 @@ dev = ["pytest>=7.0"]
 
 [project.scripts]
 npyquick = "npyquick.main:main"
+
+[tool.hatch.version]
+# Single source of truth: __version__ in the package. The build reads it from
+# here, so a source checkout and the built wheel always agree.
+path = "src/npyquick/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/npyquick"]

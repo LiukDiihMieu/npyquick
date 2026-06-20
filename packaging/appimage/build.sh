@@ -62,6 +62,7 @@ mkdir -p "$APPDIR/usr/bin" "$APPDIR/usr/lib" \
          "$APPDIR/usr/share/icons/hicolor/256x256/apps" \
          "$APPDIR/usr/share/icons/hicolor/512x512/apps"
 cp -a "$WORK/dist/npyquick/." "$APPDIR/usr/bin/"
+
 install -m 755 packaging/appimage/AppRun "$APPDIR/AppRun"
 cp packaging/appimage/io.github.liukdiihmieu.npyquick.desktop \
    "$APPDIR/io.github.liukdiihmieu.npyquick.desktop"
@@ -86,7 +87,11 @@ cp packaging/appimage/npyquick.png \
 # which is absent on many systems. AppRun adds usr/lib to LD_LIBRARY_PATH.
 LDCONFIG="$(command -v ldconfig || echo /sbin/ldconfig)"
 for lib in libxcb-cursor.so.0; do
-    src="$("$LDCONFIG" -p 2>/dev/null | awk -v l="$lib" '$1==l {print $NF; exit}')"
+    # Read all of ldconfig's output (no awk `exit`): exiting at the first match
+    # closes the pipe early, ldconfig gets SIGPIPE, and `set -o pipefail` would
+    # abort the whole build — flaky, since the match is near the top of a long
+    # list. Print only the first match instead.
+    src="$("$LDCONFIG" -p 2>/dev/null | awk -v l="$lib" '$1==l && !f {print $NF; f=1}')"
     if [ -n "$src" ] && [ -f "$src" ]; then
         cp -L "$src" "$APPDIR/usr/lib/$lib"
         echo ">> bundled $lib ($src)"
@@ -94,6 +99,20 @@ for lib in libxcb-cursor.so.0; do
         echo ">> WARNING: $lib not found on build host; AppImage may fail where it is missing"
     fi
 done
+
+# Guard: the GLib family must NOT be bundled anywhere in the AppDir (the .spec
+# filters it out of the PyInstaller bundle) so the host provides it and host GIO
+# modules like dconf keep working — otherwise dark mode and other desktop
+# settings break on hosts newer than the build machine (issue #19). Run this once
+# the whole AppDir is assembled so it also covers the gap-fill libs above. Fail
+# loudly if a GLib library ever leaks back in.
+stray="$(find "$APPDIR" -regextype posix-extended \
+    -regex '.*/lib(glib|gio|gobject|gmodule|gthread)-2\.0\.so.*' 2>/dev/null)"
+if [ -n "$stray" ]; then
+    echo ">> ERROR: GLib libraries leaked into the bundle (must come from host):" >&2
+    echo "$stray" >&2
+    exit 1
+fi
 
 # Pin a stable appimagetool release and verify it: `continuous` is a rolling
 # tag, so the build would silently change over time and couldn't be audited.

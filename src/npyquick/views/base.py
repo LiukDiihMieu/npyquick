@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import io
 import os
-import re
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -22,11 +22,19 @@ class ExportableMixin:
     """Right-click + Ctrl+C / Ctrl+S export for any FigureCanvas subclass."""
     panel_name: str = "Figure"
 
+    # Save-dialog name filters mapped to the extension Qt should append.
+    _EXPORT_FILTERS = {"PNG (*.png)": "png", "SVG (*.svg)": "svg", "PDF (*.pdf)": "pdf"}
+
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         # matplotlib canvases default to NoFocus; ClickFocus lets a click mark
         # this panel as the Ctrl+C / Ctrl+S target (resolved via focusWidget).
         self.setFocusPolicy(Qt.ClickFocus)
+        self._on_selected: Callable = lambda _: None
+
+    def set_on_selected(self, cb: Callable) -> None:
+        """Register a callback invoked with this canvas when it is clicked."""
+        self._on_selected = cb
 
     def _show_status(self, msg: str, timeout: int = 2000) -> None:
         win = self.window()
@@ -43,37 +51,42 @@ class ExportableMixin:
         if not self._exports_allowed():
             return
         menu = QMenu(self)
-        menu.addAction("Export this plot…", self._export_figure)
-        menu.addAction("Copy to clipboard", self._copy_to_clipboard)
+        menu.addAction("Export this plot…", self.export_figure)
+        menu.addAction("Copy to clipboard", self.copy_to_clipboard)
         menu.exec(ev.globalPos())
 
-    def _copy_to_clipboard(self) -> None:
+    def copy_to_clipboard(self) -> None:
         buf = io.BytesIO()
         self.figure.savefig(buf, format="png", dpi=300, bbox_inches="tight")
         buf.seek(0)
         QApplication.clipboard().setImage(QImage.fromData(buf.getvalue()))
         self._show_status(f"{self.panel_name} copied to clipboard")
 
-    def _export_figure(self) -> None:
+    def export_figure(self) -> None:
         s = QSettings("npyquick", "npyquick")
         start = s.value("last_export_dir") or s.value("last_dir", "")
-        # Seed the dialog with a panel-named default (no extension) so it is
-        # clear which plot is being saved without locking in a format — the
-        # chosen filter's extension is appended below at save time.
-        default_name = self.panel_name.replace(" ", "_")
-        path, selected_filter = QFileDialog.getSaveFileName(
-            self, f"Export {self.panel_name}",
-            os.path.join(start, default_name) if start else default_name,
-            "PNG (*.png);;SVG (*.svg);;PDF (*.pdf)",
+
+        dlg = QFileDialog(self, f"Export {self.panel_name}")
+        dlg.setAcceptMode(QFileDialog.AcceptMode.AcceptSave)
+        dlg.setNameFilters(list(self._EXPORT_FILTERS))
+        if start:
+            dlg.setDirectory(start)
+        # Seed a panel-named default with no extension; Qt appends the chosen
+        # filter's extension via setDefaultSuffix, re-synced whenever the filter
+        # changes, so there is no manual extension handling. Seed the suffix from
+        # the first filter explicitly — selectedNameFilter() is empty until the
+        # dialog is shown (native dialogs especially).
+        first_filter = next(iter(self._EXPORT_FILTERS))
+        dlg.selectNameFilter(first_filter)
+        dlg.setDefaultSuffix(self._EXPORT_FILTERS[first_filter])
+        dlg.selectFile(self.panel_name.replace(" ", "_"))
+        dlg.filterSelected.connect(
+            lambda f: dlg.setDefaultSuffix(self._EXPORT_FILTERS.get(f, ""))
         )
-        if not path:
+
+        if not dlg.exec():
             return
-        # Qt does not auto-append the extension — extract it from the chosen filter.
-        m = re.search(r'\*(\.\w+)', selected_filter)
-        if m:
-            ext = m.group(1).lower()
-            if not path.lower().endswith(ext):
-                path += ext
+        path = dlg.selectedFiles()[0]
         s.setValue("last_export_dir", os.path.dirname(os.path.abspath(path)))
         self.figure.savefig(path, dpi=300, bbox_inches="tight")
         self._show_status(f"{self.panel_name} saved to {os.path.basename(path)}", 3000)
@@ -98,12 +111,12 @@ class BaseView(QWidget):
 
     def __init__(self) -> None:
         super().__init__()
-        self._on_status: callable = lambda _: None
+        self._on_status: Callable = lambda _: None
 
-    def set_on_status(self, cb: callable) -> None:
+    def set_on_status(self, cb: Callable) -> None:
         self._on_status = cb
 
-    def set_on_canvas_selected(self, cb: callable) -> None:
+    def set_on_canvas_selected(self, cb: Callable) -> None:
         pass
 
     def refresh_status(self) -> None:
@@ -116,6 +129,6 @@ class BaseView(QWidget):
     def set_data(self, array: np.ndarray, stats: ArrayStats | None = None) -> None:
         raise NotImplementedError
 
-    def export_targets(self) -> list[tuple[str, callable]]:
+    def export_targets(self) -> list[tuple[str, Callable]]:
         """Return [(panel_name, export_fn), …] for File › Export Plot menu."""
         return []

@@ -29,6 +29,39 @@ def test_3d_array_reshapes_to_last_axis_cols():
     assert m.columnCount() == 6
 
 
+def test_large_fortran_nd_array_is_refused(monkeypatch):
+    # A large (>LARGE_BYTES) N-D Fortran-order array must NOT be reshaped (which
+    # would copy it all into RAM); the model refuses and exposes a message.
+    monkeypatch.setattr(limits, "LARGE_BYTES", 0)
+    arr = np.asfortranarray(np.zeros((3, 4, 5)))
+    assert not arr.flags["C_CONTIGUOUS"]
+    m = NpyTableModel()
+    m.set_array(arr)
+    assert m._array is None
+    assert m.rowCount() == 0 and m.columnCount() == 0
+    assert "Table view is disabled" in m.message
+
+
+def test_large_c_contiguous_nd_array_still_tabulates(monkeypatch):
+    # C-contiguous reshape is a view (no copy), so a large C-order N-D array is
+    # still shown — the guard is specific to non-C-contiguous arrays.
+    monkeypatch.setattr(limits, "LARGE_BYTES", 0)
+    arr = np.ascontiguousarray(np.zeros((4, 5, 6)))
+    m = NpyTableModel()
+    m.set_array(arr)
+    assert m.message == ""
+    assert m.rowCount() == 20 and m.columnCount() == 6
+
+
+def test_small_fortran_nd_array_still_tabulates():
+    # Below LARGE_BYTES, a copy is bounded/acceptable — no refusal.
+    arr = np.asfortranarray(np.zeros((3, 4, 5)))
+    m = NpyTableModel()
+    m.set_array(arr)
+    assert m.message == ""
+    assert m.rowCount() == 12 and m.columnCount() == 5
+
+
 def test_row_cap_applied():
     m = NpyTableModel()
     m.set_array(np.zeros((limits.TABLE_MAX_PER_AXIS + 100, 5)))

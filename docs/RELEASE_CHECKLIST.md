@@ -3,8 +3,8 @@
 ## Before tagging
 
 - [ ] `main` is clean and up to date.
-- [ ] Version is bumped in `pyproject.toml`.
-- [ ] No stale version strings in packaging scripts.
+- [ ] Version is bumped in `src/npyquick/__init__.py` (`__version__`; the single source — `pyproject.toml` reads it via `[tool.hatch.version]`).
+- [ ] No stale version strings in packaging scripts (e.g. the AppStream `<release>` in `packaging/appimage/*.appdata.xml`).
 - [ ] Tests pass.
 - [ ] README install/download instructions match the release.
 

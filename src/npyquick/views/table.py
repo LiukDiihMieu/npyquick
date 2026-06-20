@@ -14,14 +14,27 @@ from ..core.stats import ArrayStats, array_stats
 from .base import BaseView
 
 
+def _too_large_to_tabulate_message(array: np.ndarray) -> str:
+    gib = array.nbytes / 1024**3
+    size = f"{gib:.1f} GiB" if gib >= 1 else f"{array.nbytes / 1024**2:.0f} MiB"
+    return (
+        f"This {array.ndim}-D array ({size}) is stored in Fortran (column-major) "
+        f"order. Reshaping it to 2-D for the table would copy the whole array "
+        f"into memory, so the Table view is disabled for it. The Histogram view "
+        f"still works (it samples without copying)."
+    )
+
+
 class NpyTableModel(QAbstractTableModel):
     def __init__(self) -> None:
         super().__init__()
         self._array: np.ndarray | None = None
         self._flat = False
+        self.message: str = ""
 
     def set_array(self, array: np.ndarray) -> None:
         self.beginResetModel()
+        self.message = ""
         if array.ndim == 0:
             self._array = array.reshape(1, 1)
             self._flat = False
@@ -31,6 +44,12 @@ class NpyTableModel(QAbstractTableModel):
         elif array.ndim == 2:
             self._array = array
             self._flat = False
+        elif array.nbytes > limits.LARGE_BYTES and not array.flags["C_CONTIGUOUS"]:
+            # Check BEFORE reshaping: reshape(-1, last) is C-order and would copy
+            # a large Fortran-order memmap fully into RAM. Refuse instead.
+            self._array = None
+            self._flat = False
+            self.message = _too_large_to_tabulate_message(array)
         else:
             self._array = array.reshape(-1, array.shape[-1])
             self._flat = False
@@ -99,9 +118,16 @@ class RawTableView(BaseView):
             w, _ = _make_channel_widget(name, model)
             self._rgb_splitter.addWidget(w)
 
+        # Message page, shown when an array can't be tabulated (see set_data).
+        self._message_label = QLabel()
+        self._message_label.setAlignment(Qt.AlignCenter)
+        self._message_label.setWordWrap(True)
+        self._message_label.setStyleSheet("color: #888; font-size: 14px; padding: 24px;")
+
         self._stack = QStackedWidget()
         self._stack.addWidget(self._single_table)   # index 0
         self._stack.addWidget(self._rgb_splitter)   # index 1
+        self._stack.addWidget(self._message_label)  # index 2
 
         self._info = QLabel()
         self._trunc_label = QLabel()
@@ -134,6 +160,14 @@ class RawTableView(BaseView):
             trunc_prefix = ", each showing"
         else:
             self._single_model.set_array(array)
+            if self._single_model.message:
+                # Array refused (large Fortran-order N-D): show the message page.
+                self._message_label.setText(self._single_model.message)
+                self._stack.setCurrentIndex(2)
+                self._status = f"shape {array.shape}  dtype {array.dtype}"
+                self._trunc_label.setVisible(False)
+                self._info.setText(self._status)
+                return
             self._stack.setCurrentIndex(0)
             rows = self._single_model.rowCount()
             cols = self._single_model.columnCount()

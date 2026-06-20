@@ -9,6 +9,8 @@
 <p align="center">
   <a href="https://pypi.org/project/npyquick/"><img alt="PyPI version" src="https://img.shields.io/pypi/v/npyquick"></a>
   <a href="https://pypi.org/project/npyquick/"><img alt="Python versions" src="https://img.shields.io/pypi/pyversions/npyquick"></a>
+  <a href="https://github.com/LiukDiihMieu/npyquick/releases"><img alt="Windows EXE" src="https://img.shields.io/badge/Windows-EXE-blue?logo=windows"></a>
+  <a href="https://github.com/LiukDiihMieu/npyquick/releases"><img alt="Linux AppImage" src="https://img.shields.io/badge/Linux-AppImage-blue?logo=linux"></a>
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/github/license/LiukDiihMieu/npyquick"></a>
 </p>
 
@@ -55,8 +57,6 @@ conda env create -f environment.yml
 conda activate npyquick
 ```
 
-The pip and conda installs need Python ≥ 3.10, NumPy, SciPy, Matplotlib, and PySide6.
-
 ## Usage
 
 ```bash
@@ -71,7 +71,7 @@ Files can be opened via **File › Open** (`Ctrl+O`) or by **dragging and droppi
 
 ### Image view
 
-Preview 2D grayscale arrays and RGB arrays with interactive zoom, pan, colormap control, brightness adjustment, and a draggable cross-section profile.
+Preview 2D grayscale arrays and RGB arrays with interactive zoom, pan, colormap control, brightness adjustment, and a draggable cross-section profile. Complex arrays are supported too, shown as two side-by-side panels: either real and imaginary parts, or absolute value and argument.
 
 ![Image view of an RGB array](https://raw.githubusercontent.com/LiukDiihMieu/npyquick/main/docs/assets/screenshot-rgb.png)
 
@@ -89,7 +89,7 @@ Display 1D signals and paired `(x, y)` arrays with interactive zoom, pan, reset,
 
 ### Table view
 
-Fallback preview for arrays that are not naturally displayed as images or line plots, including higher-dimensional, complex, object, scalar, or empty arrays.
+Fallback preview for arrays that are not naturally displayed as images or line plots, including higher-dimensional, object, scalar, or empty arrays.
 
 ![Table view](https://raw.githubusercontent.com/LiukDiihMieu/npyquick/main/docs/assets/screenshot-table.png)
 
@@ -112,6 +112,9 @@ For detailed display rules, normalization behavior, downsampling, and performanc
 | `F5` / `Ctrl+R`  | Reload current file            |
 | `Ctrl+Tab`       | Switch to next enabled tab     |
 | `Ctrl+Shift+Tab` | Switch to previous enabled tab |
+
+On macOS, `⌘+Tab` is reserved by the system for app switching, so tab switching
+uses `Control+Tab` / `Control+Shift+Tab` or `⌘+Shift+]` / `⌘+Shift+[` (as in Safari).
 
 ## Linux desktop integration
 
@@ -186,7 +189,7 @@ xdg-mime default io.github.liukdiihmieu.npyquick.desktop application/x-npz
 ## Roadmap
 
 - [ ] `>2D` array slicer
-- [ ] Complex array support: real / imaginary / magnitude / phase
+- [x] Complex array support: real / imaginary / magnitude / phase
 
 ## Contributing
 
