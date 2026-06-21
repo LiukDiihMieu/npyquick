@@ -1,5 +1,11 @@
 # Release Checklist
 
+Building is now automated: pushing a `v*` tag runs `.github/workflows/release.yml`,
+which builds the wheel, AppImage and Windows installer from one shared wheel,
+publishes to PyPI, and opens a **draft** GitHub Release with the binaries attached.
+The build steps below are done by CI; this checklist is the prep and the
+verification of what CI produced (and the recipe if you ever build locally).
+
 ## Before tagging
 
 - [ ] `main` is clean and up to date.
@@ -41,6 +47,6 @@
 ## Release
 
 - [ ] Tag is created from the final release commit.
-- [ ] GitHub Release has AppImage, Windows setup.exe, and SHA256 checksums.
+- [ ] GitHub Release has the AppImage and Windows setup.exe attached (GitHub shows a SHA-256 digest per asset).
 - [ ] PyPI upload succeeds.
 - [ ] Release notes mention major changes and known Windows SmartScreen warning.

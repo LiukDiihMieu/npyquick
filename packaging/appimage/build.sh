@@ -21,7 +21,8 @@ cd "$REPO_ROOT"
 
 PYTHON="${PYTHON:-python3}"
 ARCH="${ARCH:-x86_64}"
-OUTPUT="${OUTPUT:-$REPO_ROOT/dist/npyquick-${ARCH}.AppImage}"
+# OUTPUT is resolved after the wheel is installed (below), so its default name
+# can carry the package version — matching the Windows installer's naming.
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
@@ -47,6 +48,12 @@ fi
 echo ">> wheel: $WHEEL"
 
 "$VPY" -m pip install "$WHEEL" pyinstaller
+
+# Read the version from the installed distribution's metadata (the standard
+# importlib.metadata API — reads .dist-info, never imports package code), so the
+# default output name matches the wheel and the Windows installer.
+VERSION="$("$VPY" -c 'from importlib.metadata import version; print(version("npyquick"))')"
+OUTPUT="${OUTPUT:-$REPO_ROOT/dist/npyquick-${VERSION}-${ARCH}.AppImage}"
 
 echo ">> running PyInstaller"
 "$WORK/venv/bin/pyinstaller" --noconfirm \

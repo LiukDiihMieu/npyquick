@@ -3,8 +3,21 @@ name: tests
 on:
   push:
     branches: [main, pcm]
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
   pull_request:
     branches: [main]
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
+  workflow_dispatch:
+
+# Newer commits on the same branch/PR cancel an in-progress run — no point
+# finishing a build for code that's already been superseded.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
@@ -53,3 +66,85 @@ jobs:
           pip install build twine
           python -m build
           twine check dist/*
+
+      # Share the wheel with the packaging-smoke jobs so they build from the same
+      # distribution this job just produced.
+      - name: Upload dist artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      # Catch "builds but doesn't run once installed". --version exits before any
+      # QApplication, so it needs Qt's import-time libs but no display plugin.
+      - name: Install Qt runtime deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libegl1 libxkbcommon0
+
+      - name: Smoke-test the installed wheel
+        run: |
+          python -m venv /tmp/wheel-smoke
+          /tmp/wheel-smoke/bin/pip install dist/*.whl
+          /tmp/wheel-smoke/bin/npyquick --version
+
+  # Build the AppImage from the shared wheel and confirm it launches. Mirrors the
+  # release recipe (same build.sh) so breakage shows up here, not at release time.
+  appimage-smoke:
+    needs: build
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download dist artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      # libxcb-cursor0: build.sh bundles it. libegl1/libxkbcommon0: the bundled Qt
+      # needs them on the host to import for the --version smoke.
+      - name: Install build and runtime deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxcb-cursor0 libegl1 libxkbcommon0
+
+      - name: Build AppImage from the wheel
+        run: bash packaging/appimage/build.sh dist/*.whl
+
+      - name: Smoke-test the AppImage
+        run: |
+          appimage=$(ls dist/npyquick-*.AppImage)
+          APPIMAGE_EXTRACT_AND_RUN=1 "$appimage" --version
+
+  # Build the Windows installer from the shared wheel, then silently install it
+  # (no admin — the installer is PrivilegesRequired=lowest) and run the result.
+  windows-smoke:
+    needs: build
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download dist artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Install Inno Setup
+        run: choco install innosetup -y --no-progress
+
+      - name: Build installer from the wheel
+        shell: pwsh
+        run: |
+          $wheel = (Get-ChildItem dist/npyquick-*.whl).FullName
+          & .\packaging\windows\build.ps1 -Wheel $wheel
+
+      - name: Smoke-test the installer
+        shell: pwsh
+        run: |
+          $exe = (Get-ChildItem dist/npyquick-*-setup.exe).FullName
+          $dir = "$env:RUNNER_TEMP\npyquick"
+          Start-Process -Wait -FilePath $exe `
+            -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',"/DIR=$dir"
+          & "$dir\npyquick.exe" --version

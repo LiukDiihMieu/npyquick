@@ -51,7 +51,9 @@ try {
     Write-Host ">> wheel: $Wheel"
 
     & $VPy -m pip install $Wheel pyinstaller
-    $Version = (& $VPy -c "import npyquick; print(npyquick.__version__)").Trim()
+    # Read the version from the installed distribution's metadata (the standard
+    # importlib.metadata API — reads .dist-info, never imports package code).
+    $Version = (& $VPy -c "from importlib.metadata import version; print(version('npyquick'))").Trim()
     Write-Host ">> version: $Version"
 
     Write-Host ">> running PyInstaller"

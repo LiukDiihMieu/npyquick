@@ -1,0 +1,143 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  # Build the PyPI artifacts once. Every other job consumes this wheel, so the
+  # AppImage, the .exe and the PyPI upload all come from the exact same build.
+  build-dist:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build sdist and wheel
+        run: |
+          pip install build
+          python -m build
+
+      - name: Upload dist artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  # Publish the shared dist to PyPI via Trusted Publishing (OIDC, no token).
+  # No checkout/build here: it only needs the artifacts, nothing else.
+  publish-pypi:
+    needs: build-dist
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - name: Download dist artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+
+  # Build the Linux AppImage from the shared wheel. Pinned to 22.04 (not latest):
+  # an AppImage links against the build host's glibc, so building on our oldest
+  # supported baseline keeps it runnable on 22.04 and everything newer.
+  appimage:
+    needs: build-dist
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download dist artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      # build.sh copies libxcb-cursor from the host into the bundle (Qt >= 6.5
+      # dlopens it), so it must be present on the runner.
+      - name: Install libxcb-cursor for bundling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxcb-cursor0
+
+      - name: Build AppImage from the shared wheel
+        run: |
+          wheel=$(ls dist/npyquick-*.whl)
+          bash packaging/appimage/build.sh "$wheel"
+
+      - name: Upload AppImage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: appimage
+          path: dist/npyquick-*.AppImage
+
+  # Build the Windows installer from the shared wheel. Needs a real Windows
+  # runner (PyInstaller freezes a native exe) plus Inno Setup for the installer.
+  windows-exe:
+    needs: build-dist
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download dist artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      # build.ps1 finds ISCC.exe in Inno Setup's standard install path, which is
+      # where Chocolatey puts it. The runner doesn't ship it preinstalled.
+      - name: Install Inno Setup
+        run: choco install innosetup -y --no-progress
+
+      - name: Build installer from the shared wheel
+        shell: pwsh
+        run: |
+          $wheel = (Get-ChildItem dist/npyquick-*.whl).FullName
+          & .\packaging\windows\build.ps1 -Wheel $wheel
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-exe
+          path: dist/npyquick-*-setup.exe
+
+  # Collect the binaries and attach them to the GitHub Release for this tag.
+  # Decoupled from publish-pypi: the downloads go to the Release page, not PyPI.
+  github-release:
+    needs: [appimage, windows-exe]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download AppImage
+        uses: actions/download-artifact@v4
+        with:
+          name: appimage
+          path: release
+
+      - name: Download Windows installer
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-exe
+          path: release
+
+      # Assemble a draft Release with the binaries attached and auto-generated
+      # notes pre-filled. It stays private until you review and click Publish.
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            release/npyquick-*.AppImage
+            release/npyquick-*-setup.exe
