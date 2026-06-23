@@ -1,11 +1,16 @@
 name: npyquick
 base: core22
-version: '0.1.3'
-summary: Quick GUI viewer for .npy / .npz arrays
-description: |
-  npyquick is a lightweight desktop viewer for NumPy .npy and .npz files.
-  Open an array and inspect it as an image, a table, or a cross-section plot —
-  no Python install or Jupyter needed.
+# title, version, summary and description are adopted from the AppStream
+# metainfo file (see the `metadata` part), keeping them in one place shared
+# with the AppImage build instead of hand-maintaining them here.
+adopt-info: metadata
+# Store/launcher icon. AppStream has no <icon> element, so set it explicitly.
+# Store icon limits: <=512x512, 1:1, <=256 KB.
+icon: snap/gui/npyquick.png
+# Store listing links (AppStream URLs are not adopted, so keep these).
+contact: https://github.com/LiukDiihMieu/npyquick/issues
+issues: https://github.com/LiukDiihMieu/npyquick/issues
+source-code: https://github.com/LiukDiihMieu/npyquick
 
 license: GPL-3.0-or-later
 grade: stable
@@ -47,3 +52,17 @@ parts:
       - libxcb-shape0
       - libxcb-xkb1
       - libxkbcommon-x11-0
+
+  # Adopt store metadata (title/version/summary/description) from the AppStream
+  # metainfo file, reusing the one written for the AppImage. Also ships it at
+  # the standard usr/share/metainfo/ path so the installed snap carries proper
+  # AppStream metadata.
+  metadata:
+    plugin: dump
+    source: packaging/appimage
+    organize:
+      io.github.liukdiihmieu.npyquick.appdata.xml: usr/share/metainfo/io.github.liukdiihmieu.npyquick.appdata.xml
+    stage:
+      - usr/share/metainfo
+    parse-info:
+      - usr/share/metainfo/io.github.liukdiihmieu.npyquick.appdata.xml
