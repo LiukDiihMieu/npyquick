@@ -14,8 +14,9 @@ confinement: strict
 apps:
   npyquick:
     command: bin/npyquick
-    # The gnome extension wires in the GTK/Qt desktop runtime (fonts, themes,
-    # icons, Wayland/X11) so we don't hand-assemble Qt's desktop dependencies.
+    # The gnome extension provides common desktop integration pieces
+    # such as fonts, themes, icons, Wayland/X11, and related runtime setup.
+    # PySide6/Qt itself still comes from the Python dependencies.
     extensions: [gnome]
     common-id: io.github.liukdiihmieu.npyquick
     # The .desktop entry and icon come from snap/gui/ (copied to meta/gui/ at
@@ -23,7 +24,9 @@ apps:
     # ${SNAP}/meta/gui/npyquick.png — an absolute in-snap path, which is what
     # the launcher needs to resolve a bundled icon.
     plugs:
-      # npyquick opens .npy files the user picks from anywhere on disk.
+      # Allow opening user data from the home directory.
+      # Files under /mnt, /media, or /run/media require the removable-media
+      # interface to be connected manually.
       - home
       - removable-media
 
