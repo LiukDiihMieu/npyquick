@@ -1,0 +1,45 @@
+name: npyquick
+base: core22
+version: '0.1.3'
+summary: Quick GUI viewer for .npy / .npz arrays
+description: |
+  npyquick is a lightweight desktop viewer for NumPy .npy and .npz files.
+  Open an array and inspect it as an image, a table, or a cross-section plot —
+  no Python install or Jupyter needed.
+
+license: GPL-3.0-or-later
+grade: stable
+confinement: strict
+
+apps:
+  npyquick:
+    command: bin/npyquick
+    # The gnome extension wires in the GTK/Qt desktop runtime (fonts, themes,
+    # icons, Wayland/X11) so we don't hand-assemble Qt's desktop dependencies.
+    extensions: [gnome]
+    common-id: io.github.liukdiihmieu.npyquick
+    desktop: usr/share/applications/io.github.liukdiihmieu.npyquick.desktop
+    plugs:
+      # npyquick opens .npy files the user picks from anywhere on disk.
+      - home
+      - removable-media
+
+parts:
+  npyquick:
+    plugin: python
+    source: .
+    stage-packages:
+      # Qt6's xcb platform plugin hard-requires libxcb-cursor; it's a frequent
+      # "works in dev, blank window in the snap" gotcha. Revisit after a build.
+      - libxcb-cursor0
+
+  # Reuse the desktop entry and icon already produced for the AppImage.
+  desktop:
+    plugin: dump
+    source: packaging/appimage
+    organize:
+      io.github.liukdiihmieu.npyquick.desktop: usr/share/applications/io.github.liukdiihmieu.npyquick.desktop
+      npyquick-512.png: usr/share/icons/hicolor/512x512/apps/io.github.liukdiihmieu.npyquick.png
+    stage:
+      - usr/share/applications
+      - usr/share/icons
