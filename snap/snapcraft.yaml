@@ -35,6 +35,15 @@ parts:
     plugin: python
     source: .
     stage-packages:
-      # Qt6's xcb platform plugin hard-requires libxcb-cursor; it's a frequent
-      # "works in dev, blank window in the snap" gotcha. Revisit after a build.
+      # System libraries the Qt6 xcb (X11) platform plugin links against. The
+      # gnome platform supplies some xcb libs but not all of these; without them
+      # the app runs on Wayland but crashes on X11 with "Could not load the Qt
+      # platform plugin xcb". The missing set was confirmed via `ldd libqxcb.so`
+      # on an X11 host. (Qt's error singles out xcb-cursor, but the real gaps are
+      # the xkb/icccm/keysyms/shape ones below.)
       - libxcb-cursor0
+      - libxcb-icccm4
+      - libxcb-keysyms1
+      - libxcb-shape0
+      - libxcb-xkb1
+      - libxkbcommon-x11-0
