@@ -18,7 +18,10 @@ apps:
     # icons, Wayland/X11) so we don't hand-assemble Qt's desktop dependencies.
     extensions: [gnome]
     common-id: io.github.liukdiihmieu.npyquick
-    desktop: usr/share/applications/io.github.liukdiihmieu.npyquick.desktop
+    # The .desktop entry and icon come from snap/gui/ (copied to meta/gui/ at
+    # build; snapd auto-detects them). The desktop file's Icon= points at
+    # ${SNAP}/meta/gui/npyquick.png — an absolute in-snap path, which is what
+    # the launcher needs to resolve a bundled icon.
     plugs:
       # npyquick opens .npy files the user picks from anywhere on disk.
       - home
@@ -32,14 +35,3 @@ parts:
       # Qt6's xcb platform plugin hard-requires libxcb-cursor; it's a frequent
       # "works in dev, blank window in the snap" gotcha. Revisit after a build.
       - libxcb-cursor0
-
-  # Reuse the desktop entry and icon already produced for the AppImage.
-  desktop:
-    plugin: dump
-    source: packaging/appimage
-    organize:
-      io.github.liukdiihmieu.npyquick.desktop: usr/share/applications/io.github.liukdiihmieu.npyquick.desktop
-      npyquick-512.png: usr/share/icons/hicolor/512x512/apps/io.github.liukdiihmieu.npyquick.png
-    stage:
-      - usr/share/applications
-      - usr/share/icons
