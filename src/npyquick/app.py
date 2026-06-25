@@ -419,7 +419,7 @@ class MainWindow(QMainWindow):
         if os.path.exists(path):
             return None
         real = os.path.realpath(path)
-        home = os.environ.get("SNAP_REAL_HOME") or os.path.expanduser("~")
+        home = os.path.realpath(os.environ.get("SNAP_REAL_HOME") or os.path.expanduser("~"))
         if real == home or real.startswith(home + os.sep):
             return None  # a missing file under home is just a normal "not found"
         if real.startswith(("/media/", "/run/media/", "/mnt/")):
@@ -428,8 +428,8 @@ class MainWindow(QMainWindow):
                 "sudo snap connect npyquick:removable-media"
             )
         return (
-            "Can't open this file — the Snap package can only access files in "
-            "your home folder and connected removable-media locations."
+            "Can't open this file — Snap can only access your home folder "
+            "and connected removable-media locations."
         )
 
     def load_file(self, path: str) -> bool:

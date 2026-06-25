@@ -7,6 +7,7 @@ happens when the array type changes the shape of the Export Plot menu.
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from npyquick.app import MainWindow
 
@@ -67,10 +68,15 @@ def test_sandbox_hint_for_other_drive(monkeypatch):
     assert msg is not None and "home folder" in msg and "snap connect" not in msg
 
 
-def test_sandbox_hint_for_removable_media(monkeypatch):
+@pytest.mark.parametrize("path", [
+    "/media/nonexistent/usb/x.npy",
+    "/run/media/alice/USB/x.npy",
+    "/mnt/nonexistent/x.npy",
+])
+def test_sandbox_hint_for_removable_media(path, monkeypatch):
     monkeypatch.setenv("SNAP", "/snap/npyquick/x1")
     monkeypatch.setenv("SNAP_REAL_HOME", "/home/alice")
-    msg = MainWindow._snap_sandbox_hint("/media/nonexistent/usb/x.npy")
+    msg = MainWindow._snap_sandbox_hint(path)
     assert msg is not None and "sudo snap connect npyquick:removable-media" in msg
 
 
