@@ -51,7 +51,7 @@ def test_corrupt_npy_load_preserves_previously_loaded_array(
 
 def test_sandbox_hint_absent_outside_snap(monkeypatch):
     monkeypatch.delenv("SNAP", raising=False)
-    assert MainWindow._snap_sandbox_hint("/data/x.npy") is None
+    assert MainWindow._snap_sandbox_hint("/nonexistent_drive/x.npy") is None
 
 
 def test_sandbox_hint_absent_for_paths_under_home(monkeypatch):
@@ -63,23 +63,42 @@ def test_sandbox_hint_absent_for_paths_under_home(monkeypatch):
 def test_sandbox_hint_for_other_drive(monkeypatch):
     monkeypatch.setenv("SNAP", "/snap/npyquick/x1")
     monkeypatch.setenv("SNAP_REAL_HOME", "/home/alice")
-    msg = MainWindow._snap_sandbox_hint("/data/experiments/x.npy")
-    assert msg is not None and "removable media" in msg and "snap connect" not in msg
+    msg = MainWindow._snap_sandbox_hint("/nonexistent_drive/experiments/x.npy")
+    assert msg is not None and "home folder" in msg and "snap connect" not in msg
 
 
 def test_sandbox_hint_for_removable_media(monkeypatch):
     monkeypatch.setenv("SNAP", "/snap/npyquick/x1")
     monkeypatch.setenv("SNAP_REAL_HOME", "/home/alice")
-    msg = MainWindow._snap_sandbox_hint("/media/alice/usb/x.npy")
-    assert msg is not None and "snap connect npyquick:removable-media" in msg
+    msg = MainWindow._snap_sandbox_hint("/media/nonexistent/usb/x.npy")
+    assert msg is not None and "sudo snap connect npyquick:removable-media" in msg
+
+
+def test_sandbox_hint_follows_symlink_to_other_drive(tmp_path, monkeypatch):
+    """A symlink under home pointing to another drive resolves out of reach."""
+    monkeypatch.setenv("SNAP", "/snap/npyquick/x1")
+    monkeypatch.setenv("SNAP_REAL_HOME", str(tmp_path))  # treat tmp_path as home
+    link = tmp_path / "link.npy"
+    link.symlink_to("/nonexistent_drive/experiments/x.npy")
+    msg = MainWindow._snap_sandbox_hint(str(link))
+    assert msg is not None and "home folder" in msg
+
+
+def test_sandbox_hint_absent_when_path_is_visible(tmp_path, monkeypatch):
+    """A reachable file that fails for another reason keeps its real error."""
+    monkeypatch.setenv("SNAP", "/snap/npyquick/x1")
+    monkeypatch.setenv("SNAP_REAL_HOME", str(tmp_path / "home"))  # home elsewhere
+    f = tmp_path / "x.npy"
+    f.write_bytes(b"x")  # exists / visible, but outside the (fake) home
+    assert MainWindow._snap_sandbox_hint(str(f)) is None
 
 
 def test_load_file_uses_sandbox_hint_when_confined(main_window, monkeypatch):
     """A failed load of an out-of-sandbox path reports the hint, not the raw error."""
     monkeypatch.setenv("SNAP", "/snap/npyquick/x1")
     monkeypatch.setenv("SNAP_REAL_HOME", "/home/alice")
-    main_window.load_file("/data/experiments/missing.npy")
-    assert "only reaches your home folder" in main_window._sb.currentMessage()
+    main_window.load_file("/nonexistent_drive/experiments/missing.npy")
+    assert "home folder" in main_window._sb.currentMessage()
 
 
 # ---------------------------------------------------------------------------
