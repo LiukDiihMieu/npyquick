@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import numpy as np
 
+from npyquick.app import MainWindow
+
 
 # ---------------------------------------------------------------------------
 # load_file() error handling: a bad file must not clobber prior state.
@@ -40,6 +42,44 @@ def test_corrupt_npy_load_preserves_previously_loaded_array(
 
     assert "Error" in main_window._sb.currentMessage()
     np.testing.assert_array_equal(main_window._model.array, prior)
+
+
+# ---------------------------------------------------------------------------
+# load_file() Snap-sandbox hint: when confined as a Snap, a path the sandbox
+# can't reach gets a clear explanation instead of a raw "No such file" error.
+# ---------------------------------------------------------------------------
+
+def test_sandbox_hint_absent_outside_snap(monkeypatch):
+    monkeypatch.delenv("SNAP", raising=False)
+    assert MainWindow._snap_sandbox_hint("/data/x.npy") is None
+
+
+def test_sandbox_hint_absent_for_paths_under_home(monkeypatch):
+    monkeypatch.setenv("SNAP", "/snap/npyquick/x1")
+    monkeypatch.setenv("SNAP_REAL_HOME", "/home/alice")
+    assert MainWindow._snap_sandbox_hint("/home/alice/lab/x.npy") is None
+
+
+def test_sandbox_hint_for_other_drive(monkeypatch):
+    monkeypatch.setenv("SNAP", "/snap/npyquick/x1")
+    monkeypatch.setenv("SNAP_REAL_HOME", "/home/alice")
+    msg = MainWindow._snap_sandbox_hint("/data/experiments/x.npy")
+    assert msg is not None and "removable media" in msg and "snap connect" not in msg
+
+
+def test_sandbox_hint_for_removable_media(monkeypatch):
+    monkeypatch.setenv("SNAP", "/snap/npyquick/x1")
+    monkeypatch.setenv("SNAP_REAL_HOME", "/home/alice")
+    msg = MainWindow._snap_sandbox_hint("/media/alice/usb/x.npy")
+    assert msg is not None and "snap connect npyquick:removable-media" in msg
+
+
+def test_load_file_uses_sandbox_hint_when_confined(main_window, monkeypatch):
+    """A failed load of an out-of-sandbox path reports the hint, not the raw error."""
+    monkeypatch.setenv("SNAP", "/snap/npyquick/x1")
+    monkeypatch.setenv("SNAP_REAL_HOME", "/home/alice")
+    main_window.load_file("/data/experiments/missing.npy")
+    assert "only reaches your home folder" in main_window._sb.currentMessage()
 
 
 # ---------------------------------------------------------------------------

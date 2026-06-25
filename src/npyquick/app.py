@@ -406,11 +406,31 @@ class MainWindow(QMainWindow):
         if path:
             self.load_file(path)
 
+    @staticmethod
+    def _snap_sandbox_hint(path: str) -> str | None:
+        """When running as a confined Snap, explain why a file the sandbox
+        can't reach (anything outside the home folder and removable media)
+        failed to open. Returns None when not running as a Snap or when the
+        path is in reach, so the original error is shown instead.
+        """
+        if not os.environ.get("SNAP"):
+            return None
+        real = os.path.realpath(path)
+        home = os.environ.get("SNAP_REAL_HOME") or os.path.expanduser("~")
+        if real == home or real.startswith(home + os.sep):
+            return None
+        if real.startswith(("/media/", "/run/media/", "/mnt/")):
+            return (
+                "Can't open this file — if it's on a USB/external drive, run:  "
+                "snap connect npyquick:removable-media"
+            )
+        return "Can't open this file — the Snap only reaches your home folder and removable media."
+
     def load_file(self, path: str) -> bool:
         try:
             self._model.load(path)
         except Exception as exc:
-            self._sb.showMessage(f"Error loading {path}: {exc}")
+            self._sb.showMessage(self._snap_sandbox_hint(path) or f"Error loading {path}: {exc}")
             return False
 
         self._current_path = path
