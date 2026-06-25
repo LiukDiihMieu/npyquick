@@ -11,6 +11,7 @@
   <a href="https://pypi.org/project/npyquick/"><img alt="Python versions" src="https://img.shields.io/pypi/pyversions/npyquick"></a>
   <a href="https://github.com/LiukDiihMieu/npyquick/releases"><img alt="Windows EXE" src="https://img.shields.io/badge/Windows-EXE-blue?logo=windows"></a>
   <a href="https://github.com/LiukDiihMieu/npyquick/releases"><img alt="Linux AppImage" src="https://img.shields.io/badge/Linux-AppImage-blue?logo=linux"></a>
+  <a href="https://snapcraft.io/npyquick"><img alt="Snap Store" src="https://img.shields.io/snapcraft/v/npyquick/latest/stable"></a>
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/github/license/LiukDiihMieu/npyquick"></a>
 </p>
 
@@ -31,7 +32,7 @@ npyquick is designed as a small, practical viewer for this job:
 
 **Linux (AppImage):**
 
-On x86-64 Linux, AppImage is available for one-click installation. Download `npyquick-x86_64.AppImage` from the [latest release](https://github.com/LiukDiihMieu/npyquick/releases/latest), then:
+On x86-64 Linux, AppImage is available for one-click installation. Download `npyquick-<version>-x86_64.AppImage` from the [latest release](https://github.com/LiukDiihMieu/npyquick/releases/latest), then:
 
 ```bash
 chmod +x npyquick-x86_64.AppImage
@@ -39,6 +40,19 @@ chmod +x npyquick-x86_64.AppImage
 ```
 
 To open `.npy` / `.npz` by double-clicking in your file manager, register the default handler once with `./npyquick-x86_64.AppImage --install-desktop` (details in [Linux desktop integration](#linux-desktop-integration)). If you integrate the AppImage with a tool like [AppImageLauncher](https://github.com/TheAssassin/AppImageLauncher), this association is set up for you automatically.
+
+**Linux (Snap):**
+
+On Ubuntu and other distributions with snap support, install from the Snap Store:
+
+```bash
+sudo snap install npyquick
+```
+
+The Snap has two limitations the AppImage and pip builds don't:
+
+- **File access:** it's sandboxed to your home folder, plus removable media after you run `sudo snap connect npyquick:removable-media`. Files on other drives won't open — including home folders that are symlinks to another disk — so use the AppImage or pip install for those.
+- **No double-click:** the Snap can't register `.npy` / `.npz` file associations, so double-clicking won't launch it. Open npyquick first, then drag a file onto the window, or use File › Open.
 
 **Windows:**
 
