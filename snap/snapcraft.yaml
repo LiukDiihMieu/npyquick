@@ -1,0 +1,68 @@
+name: npyquick
+base: core24
+# title, version, summary and description are adopted from the AppStream
+# metainfo file (see the `metadata` part), keeping them in one place shared
+# with the AppImage build instead of hand-maintaining them here.
+adopt-info: metadata
+# Store/launcher icon. AppStream has no <icon> element, so set it explicitly.
+# Store icon limits: <=512x512, 1:1, <=256 KB.
+icon: snap/gui/npyquick.png
+# Store listing links (AppStream URLs are not adopted, so keep these).
+contact: https://github.com/LiukDiihMieu/npyquick/issues
+issues: https://github.com/LiukDiihMieu/npyquick/issues
+source-code: https://github.com/LiukDiihMieu/npyquick
+
+license: GPL-3.0-or-later
+grade: stable
+confinement: strict
+
+apps:
+  npyquick:
+    command: bin/npyquick
+    # The gnome extension provides common desktop integration pieces
+    # such as fonts, themes, icons, Wayland/X11, and related runtime setup.
+    # PySide6/Qt itself still comes from the Python dependencies.
+    extensions: [gnome]
+    common-id: io.github.liukdiihmieu.npyquick
+    # The .desktop entry and icon come from snap/gui/ (copied to meta/gui/ at
+    # build; snapd auto-detects them). The desktop file's Icon= points at
+    # ${SNAP}/meta/gui/npyquick.png — an absolute in-snap path, which is what
+    # the launcher needs to resolve a bundled icon.
+    plugs:
+      # Allow opening user data from the home directory.
+      # Files under /mnt, /media, or /run/media require the removable-media
+      # interface to be connected manually.
+      - home
+      - removable-media
+
+parts:
+  npyquick:
+    plugin: python
+    source: .
+    stage-packages:
+      # System libraries the Qt6 xcb (X11) platform plugin links against. The
+      # gnome platform supplies some xcb libs but not all of these; without them
+      # the app runs on Wayland but crashes on X11 with "Could not load the Qt
+      # platform plugin xcb". The missing set was confirmed via `ldd libqxcb.so`
+      # on an X11 host. (Qt's error singles out xcb-cursor, but the real gaps are
+      # the xkb/icccm/keysyms/shape ones below.)
+      - libxcb-cursor0
+      - libxcb-icccm4
+      - libxcb-keysyms1
+      - libxcb-shape0
+      - libxcb-xkb1
+      - libxkbcommon-x11-0
+
+  # Adopt store metadata (title/version/summary/description) from the AppStream
+  # metainfo file, reusing the one written for the AppImage. Also ships it at
+  # the standard usr/share/metainfo/ path so the installed snap carries proper
+  # AppStream metadata.
+  metadata:
+    plugin: dump
+    source: packaging/appimage
+    organize:
+      io.github.liukdiihmieu.npyquick.appdata.xml: usr/share/metainfo/io.github.liukdiihmieu.npyquick.appdata.xml
+    stage:
+      - usr/share/metainfo
+    parse-info:
+      - usr/share/metainfo/io.github.liukdiihmieu.npyquick.appdata.xml

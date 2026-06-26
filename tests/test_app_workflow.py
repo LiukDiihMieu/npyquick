@@ -7,6 +7,9 @@ happens when the array type changes the shape of the Export Plot menu.
 from __future__ import annotations
 
 import numpy as np
+import pytest
+
+from npyquick.app import MainWindow
 
 
 # ---------------------------------------------------------------------------
@@ -40,6 +43,68 @@ def test_corrupt_npy_load_preserves_previously_loaded_array(
 
     assert "Error" in main_window._sb.currentMessage()
     np.testing.assert_array_equal(main_window._model.array, prior)
+
+
+# ---------------------------------------------------------------------------
+# load_file() Snap-sandbox hint: when confined as a Snap, a path the sandbox
+# can't reach gets a clear explanation instead of a raw "No such file" error.
+# ---------------------------------------------------------------------------
+
+def test_sandbox_hint_absent_outside_snap(monkeypatch):
+    monkeypatch.delenv("SNAP", raising=False)
+    assert MainWindow._snap_sandbox_hint("/nonexistent_drive/x.npy") is None
+
+
+def test_sandbox_hint_absent_for_paths_under_home(monkeypatch):
+    monkeypatch.setenv("SNAP", "/snap/npyquick/x1")
+    monkeypatch.setenv("SNAP_REAL_HOME", "/home/alice")
+    assert MainWindow._snap_sandbox_hint("/home/alice/lab/x.npy") is None
+
+
+def test_sandbox_hint_for_other_drive(monkeypatch):
+    monkeypatch.setenv("SNAP", "/snap/npyquick/x1")
+    monkeypatch.setenv("SNAP_REAL_HOME", "/home/alice")
+    msg = MainWindow._snap_sandbox_hint("/nonexistent_drive/experiments/x.npy")
+    assert msg is not None and "home folder" in msg and "snap connect" not in msg
+
+
+@pytest.mark.parametrize("path", [
+    "/media/nonexistent/usb/x.npy",
+    "/run/media/alice/USB/x.npy",
+    "/mnt/nonexistent/x.npy",
+])
+def test_sandbox_hint_for_removable_media(path, monkeypatch):
+    monkeypatch.setenv("SNAP", "/snap/npyquick/x1")
+    monkeypatch.setenv("SNAP_REAL_HOME", "/home/alice")
+    msg = MainWindow._snap_sandbox_hint(path)
+    assert msg is not None and "sudo snap connect npyquick:removable-media" in msg
+
+
+def test_sandbox_hint_follows_symlink_to_other_drive(tmp_path, monkeypatch):
+    """A symlink under home pointing to another drive resolves out of reach."""
+    monkeypatch.setenv("SNAP", "/snap/npyquick/x1")
+    monkeypatch.setenv("SNAP_REAL_HOME", str(tmp_path))  # treat tmp_path as home
+    link = tmp_path / "link.npy"
+    link.symlink_to("/nonexistent_drive/experiments/x.npy")
+    msg = MainWindow._snap_sandbox_hint(str(link))
+    assert msg is not None and "home folder" in msg
+
+
+def test_sandbox_hint_absent_when_path_is_visible(tmp_path, monkeypatch):
+    """A reachable file that fails for another reason keeps its real error."""
+    monkeypatch.setenv("SNAP", "/snap/npyquick/x1")
+    monkeypatch.setenv("SNAP_REAL_HOME", str(tmp_path / "home"))  # home elsewhere
+    f = tmp_path / "x.npy"
+    f.write_bytes(b"x")  # exists / visible, but outside the (fake) home
+    assert MainWindow._snap_sandbox_hint(str(f)) is None
+
+
+def test_load_file_uses_sandbox_hint_when_confined(main_window, monkeypatch):
+    """A failed load of an out-of-sandbox path reports the hint, not the raw error."""
+    monkeypatch.setenv("SNAP", "/snap/npyquick/x1")
+    monkeypatch.setenv("SNAP_REAL_HOME", "/home/alice")
+    main_window.load_file("/nonexistent_drive/experiments/missing.npy")
+    assert "home folder" in main_window._sb.currentMessage()
 
 
 # ---------------------------------------------------------------------------

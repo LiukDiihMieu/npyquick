@@ -1,0 +1,66 @@
+name: snap
+
+# Snap is its own pipeline, separate from the wheel-derived artifacts: it doesn't
+# consume the shared wheel, it ships its own runtime (base: core24), and it
+# publishes to the Snap Store rather than PyPI / the GitHub Release. It's also a
+# heavy build, so it runs only on a tag or on demand — not on every push/PR.
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  # Build and smoke-test the snap, then hand it off as an artifact. This runs
+  # freely; only the store upload below is gated.
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # action-build installs LXD + snapcraft and builds inside a core24
+      # container, so the runner OS is irrelevant. The version comes from the
+      # AppStream <release> via adopt-info in snapcraft.yaml.
+      - name: Build the snap
+        uses: canonical/action-build@v1.3.0
+        id: snapcraft
+
+      # Catch "builds but won't run" before it can reach the store.
+      - name: Smoke-test the snap
+        run: |
+          sudo snap install --dangerous ${{ steps.snapcraft.outputs.snap }}
+          npyquick --version
+
+      - name: Upload the snap
+        uses: actions/upload-artifact@v4
+        with:
+          name: snap
+          path: ${{ steps.snapcraft.outputs.snap }}
+
+  # Upload to the Snap Store's edge channel. Gated on the `snap-store`
+  # environment (like publish-pypi is on `pypi`): the job waits for a manual
+  # approval before anything is published. Promotion edge -> stable stays a
+  # separate manual step. Needs the SNAPCRAFT_STORE_CREDENTIALS secret (from
+  # `snapcraft export-login`); scope it to this environment.
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: snap-store
+    steps:
+      - name: Download the snap
+        uses: actions/download-artifact@v4
+        with:
+          name: snap
+          path: snap-artifact
+
+      - name: Locate the snap
+        id: loc
+        run: echo "path=$(ls snap-artifact/*.snap)" >> "$GITHUB_OUTPUT"
+
+      - name: Publish to the edge channel
+        uses: canonical/action-publish@v1.2.0
+        env:
+          SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
+        with:
+          snap: ${{ steps.loc.outputs.path }}
+          release: edge

@@ -406,11 +406,37 @@ class MainWindow(QMainWindow):
         if path:
             self.load_file(path)
 
+    @staticmethod
+    def _snap_sandbox_hint(path: str) -> str | None:
+        """When running as a confined Snap, explain why a file the sandbox
+        can't reach failed to open. Returns None unless we are a Snap *and*
+        the path is genuinely unreachable from inside confinement — so a
+        visible-but-failing file (e.g. corrupt) keeps its real error.
+        """
+        if not os.environ.get("SNAP"):
+            return None
+        # Reachable from inside the Snap -> the failure has another cause.
+        if os.path.exists(path):
+            return None
+        real = os.path.realpath(path)
+        home = os.path.realpath(os.environ.get("SNAP_REAL_HOME") or os.path.expanduser("~"))
+        if real == home or real.startswith(home + os.sep):
+            return None  # a missing file under home is just a normal "not found"
+        if real.startswith(("/media/", "/run/media/", "/mnt/")):
+            return (
+                "Can't open this file — if it's on a USB/external drive, run:  "
+                "sudo snap connect npyquick:removable-media"
+            )
+        return (
+            "Can't open this file — Snap can only access your home folder "
+            "and connected removable-media locations."
+        )
+
     def load_file(self, path: str) -> bool:
         try:
             self._model.load(path)
         except Exception as exc:
-            self._sb.showMessage(f"Error loading {path}: {exc}")
+            self._sb.showMessage(self._snap_sandbox_hint(path) or f"Error loading {path}: {exc}")
             return False
 
         self._current_path = path
