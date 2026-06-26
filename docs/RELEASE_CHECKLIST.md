@@ -30,6 +30,20 @@ verification of what CI produced (and the recipe if you ever build locally).
 - [ ] `--install-desktop` writes a correct desktop entry.
 - [ ] AppImageLauncher integration still works.
 
+## Linux Snap
+
+Built and published manually (not by the tag CI), on an Ubuntu 22.04 host with LXD.
+
+- [ ] `snapcraft pack --use-lxd` builds the `.snap` (version is adopted from the AppStream `<release>`).
+- [ ] Installs with `sudo snap install --dangerous`.
+- [ ] `.npy` and `.npz` sample files open across the image / table / cross-section / histogram views.
+- [ ] Launches from the application menu with the correct icon.
+- [ ] Works on both X11 and Wayland sessions (the Qt xcb path needs the staged xcb/xkb libs).
+- [ ] A file outside the sandbox (e.g. on another drive) shows the sandbox hint, not a raw error.
+- [ ] Uploaded to the edge channel: `snapcraft upload --release=edge ...`.
+- [ ] After edge verification, promoted to stable: `snapcraft release npyquick <rev> stable`.
+- [ ] Store text/icon updated with `snapcraft upload-metadata <snap> --force`; links and screenshots set in the web dashboard.
+
 ## Windows installer
 
 - [ ] PyInstaller onedir build succeeds on Windows.
