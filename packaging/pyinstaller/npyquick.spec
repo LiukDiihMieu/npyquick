@@ -12,10 +12,17 @@ entry = os.path.join(SPECPATH, "npyquick_entry.py")
 _icon = os.path.join(SPECPATH, "..", "windows", "npyquick.ico")
 icon = _icon if os.path.exists(_icon) else None
 
-# matplotlib's Qt backend is imported dynamically, so PyInstaller can't see it
-# by static analysis; name it explicitly. numpy / scipy / PySide6 are covered by
-# PyInstaller's bundled hooks.
-hiddenimports = ["matplotlib.backends.backend_qtagg"]
+# matplotlib's backends are imported dynamically, so PyInstaller can't see them
+# by static analysis; name them explicitly. backend_qtagg drives the on-screen
+# canvas (and PNG export); backend_svg / backend_pdf are loaded lazily by savefig
+# only when those formats are requested, so the frozen build would otherwise ship
+# without them and SVG/PDF export would fail with only PNG working (issue #33).
+# numpy / scipy / PySide6 are covered by PyInstaller's bundled hooks.
+hiddenimports = [
+    "matplotlib.backends.backend_qtagg",
+    "matplotlib.backends.backend_svg",
+    "matplotlib.backends.backend_pdf",
+]
 
 # Bundle npyquick's own package data (icon + MIME XML) so `--install-desktop`
 # works when run from the AppImage. Filter to the real assets — resources/ may
