@@ -1,5 +1,5 @@
 name: npyquick
-base: core22
+base: core24
 # title, version, summary and description are adopted from the AppStream
 # metainfo file (see the `metadata` part), keeping them in one place shared
 # with the AppImage build instead of hand-maintaining them here.
