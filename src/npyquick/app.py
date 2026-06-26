@@ -408,13 +408,13 @@ class MainWindow(QMainWindow):
 
     @staticmethod
     def _snap_sandbox_hint(path: str) -> str | None:
-        """When running as a confined Snap, explain why dragging in a file the
-        sandbox can't reach failed. Returns None unless we are a Snap *and* the
+        """When running as a confined Snap, explain why a file the sandbox
+        can't reach failed to open. Returns None unless we are a Snap *and* the
         path is genuinely unreachable from inside confinement — so a
         visible-but-failing file (e.g. corrupt) keeps its real error.
 
         File > Open reaches any file the user picks (it goes through the desktop
-        portal), so the fix is to use it instead of drag-and-drop.
+        portal), so the fix is to use it instead of opening the file directly.
         """
         if not os.environ.get("SNAP"):
             return None
@@ -426,8 +426,8 @@ class MainWindow(QMainWindow):
         if real == home or real.startswith(home + os.sep):
             return None  # a missing file under home is just a normal "not found"
         return (
-            "Can't open this file — the Snap sandbox limits drag-and-drop to "
-            "your home folder. Use File > Open (Ctrl+O) to open it from anywhere."
+            "Can't open this file directly under the Snap sandbox. "
+            "Use File > Open (Ctrl+O) to select it instead."
         )
 
     def load_file(self, path: str) -> bool:
