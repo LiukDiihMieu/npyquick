@@ -51,7 +51,7 @@ sudo snap install npyquick
 
 The Snap has two limitations the AppImage and pip builds don't:
 
-- **File access:** it's sandboxed to your home folder, plus removable media after you run `sudo snap connect npyquick:removable-media`. Files on other drives won't open — including home folders that are symlinks to another disk — so use the AppImage or pip install for those.
+- **File access:** **File › Open** opens any file you pick. Drag-and-drop, though, is limited by the sandbox to your home folder (plus removable media once you run `sudo snap connect npyquick:removable-media`), so for a file on another drive — or a home folder that's a symlink to another disk — open it with File › Open instead of dragging it in.
 - **No double-click:** the Snap can't register `.npy` / `.npz` file associations, so double-clicking won't launch it. Open npyquick first, then drag a file onto the window, or use File › Open.
 
 **Windows:**

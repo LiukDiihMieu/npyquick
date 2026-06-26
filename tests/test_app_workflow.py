@@ -46,8 +46,9 @@ def test_corrupt_npy_load_preserves_previously_loaded_array(
 
 
 # ---------------------------------------------------------------------------
-# load_file() Snap-sandbox hint: when confined as a Snap, a path the sandbox
-# can't reach gets a clear explanation instead of a raw "No such file" error.
+# load_file() Snap-sandbox hint: dragging in a file the sandbox can't reach
+# fails, so point the user at File > Open (it goes through the desktop portal
+# and can reach any file they pick) instead of showing a raw "No such file".
 # ---------------------------------------------------------------------------
 
 def test_sandbox_hint_absent_outside_snap(monkeypatch):
@@ -61,23 +62,17 @@ def test_sandbox_hint_absent_for_paths_under_home(monkeypatch):
     assert MainWindow._snap_sandbox_hint("/home/alice/lab/x.npy") is None
 
 
-def test_sandbox_hint_for_other_drive(monkeypatch):
-    monkeypatch.setenv("SNAP", "/snap/npyquick/x1")
-    monkeypatch.setenv("SNAP_REAL_HOME", "/home/alice")
-    msg = MainWindow._snap_sandbox_hint("/nonexistent_drive/experiments/x.npy")
-    assert msg is not None and "home folder" in msg and "snap connect" not in msg
-
-
 @pytest.mark.parametrize("path", [
+    "/nonexistent_drive/experiments/x.npy",
     "/media/nonexistent/usb/x.npy",
     "/run/media/alice/USB/x.npy",
     "/mnt/nonexistent/x.npy",
 ])
-def test_sandbox_hint_for_removable_media(path, monkeypatch):
+def test_sandbox_hint_points_to_file_open(path, monkeypatch):
     monkeypatch.setenv("SNAP", "/snap/npyquick/x1")
     monkeypatch.setenv("SNAP_REAL_HOME", "/home/alice")
     msg = MainWindow._snap_sandbox_hint(path)
-    assert msg is not None and "sudo snap connect npyquick:removable-media" in msg
+    assert msg is not None and "File > Open" in msg
 
 
 def test_sandbox_hint_follows_symlink_to_other_drive(tmp_path, monkeypatch):
@@ -87,7 +82,7 @@ def test_sandbox_hint_follows_symlink_to_other_drive(tmp_path, monkeypatch):
     link = tmp_path / "link.npy"
     link.symlink_to("/nonexistent_drive/experiments/x.npy")
     msg = MainWindow._snap_sandbox_hint(str(link))
-    assert msg is not None and "home folder" in msg
+    assert msg is not None and "File > Open" in msg
 
 
 def test_sandbox_hint_absent_when_path_is_visible(tmp_path, monkeypatch):
@@ -104,7 +99,7 @@ def test_load_file_uses_sandbox_hint_when_confined(main_window, monkeypatch):
     monkeypatch.setenv("SNAP", "/snap/npyquick/x1")
     monkeypatch.setenv("SNAP_REAL_HOME", "/home/alice")
     main_window.load_file("/nonexistent_drive/experiments/missing.npy")
-    assert "home folder" in main_window._sb.currentMessage()
+    assert "File > Open" in main_window._sb.currentMessage()
 
 
 # ---------------------------------------------------------------------------
