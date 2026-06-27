@@ -214,8 +214,7 @@ class MainWindow(QMainWindow):
         vm.addSeparator()
         cmap_menu = vm.addMenu("Colormap")
         # Global "reverse" applies on top of any base map, sparing a duplicate
-        # "_r" entry for every colormap. It toggles the matplotlib "_r" suffix
-        # (adding it, or removing it from a base that already ends in "_r").
+        # "_r" entry for every colormap; it appends matplotlib's "_r" suffix.
         reverse_a = QAction("Reverse", self, checkable=True)
         reverse_a.setChecked(self._colormap_reverse)
         reverse_a.toggled.connect(self._set_colormap_reverse)
@@ -231,7 +230,7 @@ class MainWindow(QMainWindow):
             ("twilight", "Twilight (cyclic)"),
             ("hot", "Hot"),
             ("coolwarm", "Coolwarm"),
-            ("RdBu_r", "RdBu (diverging)"),
+            ("RdBu", "RdBu (diverging)"),
             ("turbo", "Turbo"),
         ]
         group = QActionGroup(self)
@@ -587,11 +586,8 @@ class MainWindow(QMainWindow):
 
     @staticmethod
     def _effective_colormap(base: str, reverse: bool) -> str:
-        if not reverse:
-            return base
-        # matplotlib reversal is the "_r" suffix; toggle it so a base that is
-        # already reversed (e.g. RdBu_r) maps back to its forward form.
-        return base[:-2] if base.endswith("_r") else base + "_r"
+        # matplotlib auto-registers a reversed "<name>_r" for every colormap.
+        return f"{base}_r" if reverse else base
 
     def _apply_colormap(self, name: str) -> None:
         self._colormap = name

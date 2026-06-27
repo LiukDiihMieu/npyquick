@@ -110,6 +110,16 @@ def test_sandbox_hint_absent_when_path_is_visible(tmp_path, monkeypatch):
     assert MainWindow._snap_sandbox_hint(str(f)) is None
 
 
+# ---------------------------------------------------------------------------
+# Colormap reverse: canonical matplotlib names + an "_r" suffix toggle.
+# ---------------------------------------------------------------------------
+
+def test_effective_colormap_appends_reverse_suffix():
+    assert MainWindow._effective_colormap("viridis", False) == "viridis"
+    assert MainWindow._effective_colormap("viridis", True) == "viridis_r"
+    assert MainWindow._effective_colormap("RdBu", True) == "RdBu_r"
+
+
 def test_load_file_uses_sandbox_hint_when_confined(
     main_window, monkeypatch, captured_warning,
 ):
