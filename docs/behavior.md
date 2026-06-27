@@ -50,10 +50,13 @@ Available colormaps include:
 * inferno
 * magma
 * cividis
+* twilight (cyclic, suited to phase/angle data)
 * hot
 * coolwarm
 * RdBu
 * turbo
+
+Any colormap can be flipped with the **Reverse** option.
 
 ### RGB arrays
 
@@ -165,7 +168,7 @@ Examples include:
 
 To keep very large arrays usable, displayed rows and columns are capped.
 
-The current display cap is 10,000 rows and 10,000 columns. This cap only affects the table preview, not the original loaded array.
+The current display cap is 2,000 rows and 2,000 columns. This cap only affects the table preview, not the original loaded array.
 
 ## Performance notes
 
