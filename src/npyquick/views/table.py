@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 from PySide6.QtCore import QAbstractTableModel, QModelIndex, Qt
+from PySide6.QtGui import QPalette
 from PySide6.QtWidgets import (
     QHBoxLayout, QLabel, QSplitter, QStackedWidget, QTableView, QVBoxLayout,
     QWidget,
@@ -122,7 +123,13 @@ class RawTableView(BaseView):
         self._message_label = QLabel()
         self._message_label.setAlignment(Qt.AlignCenter)
         self._message_label.setWordWrap(True)
-        self._message_label.setStyleSheet("color: #888; font-size: 14px; padding: 24px;")
+        # PlaceholderText role so the muted text follows theme switches; see the
+        # matching empty-state label in app.py.
+        self._message_label.setForegroundRole(QPalette.ColorRole.PlaceholderText)
+        self._message_label.setContentsMargins(24, 24, 24, 24)
+        font = self._message_label.font()
+        font.setPixelSize(14)
+        self._message_label.setFont(font)
 
         self._stack = QStackedWidget()
         self._stack.addWidget(self._single_table)   # index 0

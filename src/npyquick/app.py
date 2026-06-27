@@ -9,7 +9,7 @@ from collections.abc import Callable
 
 import numpy as np
 from PySide6.QtCore import QKeyCombination, Qt, QSettings, QUrl
-from PySide6.QtGui import QAction, QActionGroup, QKeySequence, QShortcut
+from PySide6.QtGui import QAction, QActionGroup, QKeySequence, QPalette, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -283,7 +283,13 @@ class MainWindow(QMainWindow):
         # selected. Lives in the stack at an index that has no corresponding tab.
         self._empty_label = QLabel()
         self._empty_label.setAlignment(Qt.AlignCenter)
-        self._empty_label.setStyleSheet("color: #888; font-size: 16px;")
+        # Use the PlaceholderText role (not a stylesheet colour) so the muted
+        # text tracks light/dark theme switches at runtime, like body text does;
+        # a stylesheet colour would override the palette and freeze it.
+        self._empty_label.setForegroundRole(QPalette.ColorRole.PlaceholderText)
+        font = self._empty_label.font()
+        font.setPixelSize(16)
+        self._empty_label.setFont(font)
         self._empty_label.setWordWrap(True)
         self._empty_page = QWidget()
         _ep_layout = QVBoxLayout(self._empty_page)
