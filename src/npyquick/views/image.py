@@ -342,6 +342,7 @@ class ImageCanvas(ExportableMixin, FigureCanvas):
 
     def _on_axes_leave(self, ev) -> None:
         self._hover = None
+        self.unsetCursor()
         self._on_status(self.status_str())
 
     def _on_scroll(self, ev) -> None:
@@ -407,7 +408,11 @@ class ImageCanvas(ExportableMixin, FigureCanvas):
             self._refresh_profile()
             self.draw_idle()
             self._on_endpoints_changed(self)
-        elif self._pan_start is not None:
+            self.setCursor(Qt.CursorShape.ClosedHandCursor)
+            self._on_status(self.status_str())
+            return
+
+        if self._pan_start is not None:
             x0_px, y0_px, xlim0, ylim0, inv0 = self._pan_start
             p0 = inv0.transform([x0_px, y0_px])
             p1 = inv0.transform([ev.x, ev.y])
@@ -426,8 +431,18 @@ class ImageCanvas(ExportableMixin, FigureCanvas):
             elif yl[0] > y_bot:
                 yl = [y_bot, y_bot - span_y]
             self._apply_view(xl, yl)
+            self._on_status(self.status_str())
+            return
 
-        self._on_status(self.status_str())
+        # Idle hover: only when the cursor rests on a draggable endpoint do we
+        # swap in a grab cursor and a hint. Anywhere else keeps the default
+        # cursor and the live pixel readout, so scanning values is undisturbed.
+        if ev.inaxes is self._ax and self._hit(ev.xdata, ev.ydata) is not None:
+            self.setCursor(Qt.CursorShape.OpenHandCursor)
+            self._on_status("Drag to move the cross-section endpoint")
+        else:
+            self.unsetCursor()
+            self._on_status(self.status_str())
 
     def _on_release(self, ev) -> None:
         if ev.button == 1:
