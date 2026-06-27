@@ -75,6 +75,11 @@ class NpyDataModel:
                 f"memory-mapped: {exc}"
             ) from exc
 
+    @property
+    def selected_key(self) -> str:
+        """Key of the array currently materialized (empty if none/.npy)."""
+        return self._selected_key
+
     def available_array_meta(self) -> dict[str, MemberMeta]:
         return dict(self._metas)
 

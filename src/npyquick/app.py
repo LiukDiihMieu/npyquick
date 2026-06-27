@@ -444,7 +444,13 @@ class MainWindow(QMainWindow):
         try:
             self._model.load(path)
         except Exception as exc:
-            self._sb.showMessage(self._snap_sandbox_hint(path) or f"Error loading {path}: {exc}")
+            # A failed open is a hard failure the user just triggered; a status
+            # message would be missed (and overwritten by canvas hover readouts),
+            # so interrupt with a dialog. Reload/drag share this path.
+            QMessageBox.warning(
+                self, "Open failed",
+                self._snap_sandbox_hint(path) or f"Error loading {path}: {exc}",
+            )
             return False
 
         self._current_path = path
@@ -521,7 +527,15 @@ class MainWindow(QMainWindow):
         try:
             self._model.select_array(key)
         except Exception as exc:
-            self._sb.showMessage(f"Cannot load array '{key}': {exc}")
+            QMessageBox.warning(
+                self, "Cannot load array", f"Cannot load array '{key}': {exc}"
+            )
+            # The pick failed; the model still holds the prior member, so snap the
+            # dropdown back to match it (findData -> -1 reverts to no selection)
+            # instead of leaving it parked on the array that never loaded.
+            self._array_combo.setCurrentIndex(
+                self._array_combo.findData(self._model.selected_key)
+            )
             return
         self._refresh_views()
 
