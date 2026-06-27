@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 import io
-import os
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 import numpy as np
-from PySide6.QtCore import Qt, QSettings
+from PySide6.QtCore import Qt, QFileInfo, QSettings
 from PySide6.QtGui import QImage
 from PySide6.QtWidgets import (
     QApplication, QFileDialog, QMainWindow, QMenu, QWidget,
@@ -71,25 +70,34 @@ class ExportableMixin:
         dlg.setNameFilters(list(self._EXPORT_FILTERS))
         if start:
             dlg.setDirectory(start)
-        # Seed a panel-named default with no extension; Qt appends the chosen
-        # filter's extension via setDefaultSuffix, re-synced whenever the filter
-        # changes, so there is no manual extension handling. Seed the suffix from
-        # the first filter explicitly — selectedNameFilter() is empty until the
-        # dialog is shown (native dialogs especially).
+        # Preselect the first filter and seed an extension-less name. We do NOT
+        # use setDefaultSuffix to append the extension: it is re-synced via the
+        # filterSelected signal, which does not fire in every environment (e.g.
+        # the save dialog under Snap), leaving the suffix stale and saving the
+        # wrong format (issue #33). selectedNameFilter() is reliable everywhere,
+        # so we resolve the format and append the extension ourselves below.
         first_filter = next(iter(self._EXPORT_FILTERS))
         dlg.selectNameFilter(first_filter)
-        dlg.setDefaultSuffix(self._EXPORT_FILTERS[first_filter])
         dlg.selectFile(self.panel_name.replace(" ", "_"))
-        dlg.filterSelected.connect(
-            lambda f: dlg.setDefaultSuffix(self._EXPORT_FILTERS.get(f, ""))
-        )
 
         if not dlg.exec():
             return
         path = dlg.selectedFiles()[0]
-        s.setValue("last_export_dir", os.path.dirname(os.path.abspath(path)))
-        self.figure.savefig(path, dpi=300, bbox_inches="tight")
-        self._show_status(f"{self.panel_name} saved to {os.path.basename(path)}", 3000)
+        # Resolve the format from the reliable selectedNameFilter(): honour a
+        # recognized extension the user typed, otherwise take the chosen filter
+        # (falling back to the default filter if the platform reports none), and
+        # make the path carry it. format= is passed so the content always matches.
+        typed = QFileInfo(path).suffix().lower()
+        if typed in self._EXPORT_FILTERS.values():
+            fmt = typed
+        else:
+            fmt = self._EXPORT_FILTERS.get(
+                dlg.selectedNameFilter(), self._EXPORT_FILTERS[first_filter]
+            )
+            path = f"{path}.{fmt}"
+        s.setValue("last_export_dir", QFileInfo(path).absolutePath())
+        self.figure.savefig(path, format=fmt, dpi=300, bbox_inches="tight")
+        self._show_status(f"{self.panel_name} saved to {QFileInfo(path).fileName()}", 3000)
 
 
 class SpatialView:
