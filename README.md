@@ -39,7 +39,7 @@ chmod +x npyquick-x86_64.AppImage
 ./npyquick-x86_64.AppImage path/to/file.npy
 ```
 
-To open `.npy` / `.npz` by double-clicking in your file manager, register the default handler once with `./npyquick-x86_64.AppImage --install-desktop` (details in [Linux desktop integration](#linux-desktop-integration)). If you integrate the AppImage with a tool like [AppImageLauncher](https://github.com/TheAssassin/AppImageLauncher), this association is set up for you automatically.
+To open `.npy` / `.npz` by double-clicking in your file manager, register the default handler once with `./npyquick-x86_64.AppImage --install-desktop` (details in [Linux desktop integration](#pip--appimage)). If you integrate the AppImage with a tool like [AppImageLauncher](https://github.com/TheAssassin/AppImageLauncher), this association is set up for you automatically.
 
 **Linux (Snap):**
 
@@ -49,10 +49,9 @@ On Ubuntu and other distributions with snap support, install from the Snap Store
 sudo snap install npyquick
 ```
 
-The Snap has two limitations the AppImage and pip builds don't:
+To open `.npy` / `.npz` by double-clicking in your file manager, set up the association once (details in [Linux desktop integration](#snap)).
 
-- **File access:** it's sandboxed to your home folder, plus removable media after you run `sudo snap connect npyquick:removable-media`. Files on other drives won't open — including home folders that are symlinks to another disk — so use the AppImage or pip install for those.
-- **No double-click:** the Snap can't register `.npy` / `.npz` file associations, so double-clicking won't launch it. Open npyquick first, then drag a file onto the window, or use File › Open.
+The Snap is sandboxed, so it reads files in your home folder and, once you run `sudo snap connect npyquick:removable-media`, removable media. Drag-and-drop and double-click are limited to those locations; to open a file elsewhere — another drive, or a home folder that's a symlink to another disk — use **File › Open**, which reaches any file you pick.
 
 **Windows:**
 
@@ -132,7 +131,9 @@ uses `Control+Tab` / `Control+Shift+Tab` or `⌘+Shift+]` / `⌘+Shift+[` (as in
 
 ## Linux desktop integration
 
-Register npyquick as the handler for `.npy` / `.npz` files so you can double-click them in your file manager, or right-click → Open With:
+Register npyquick as the handler for `.npy` / `.npz` files so you can double-click them in your file manager, or right-click → Open With. How depends on how you installed npyquick.
+
+### pip / AppImage
 
 ```bash
 npyquick --install-desktop
@@ -153,7 +154,7 @@ npyquick --uninstall-desktop
 Works on desktops that follow the freedesktop.org desktop-entry and MIME standards (GNOME, KDE Plasma, XFCE, Cinnamon, MATE). Some environments only show the new association after the file manager restarts or you log out and back in.
 
 <details>
-<summary>Manual setup (without the CLI command)</summary>
+<summary>Manual setup</summary>
 
 Create `~/.local/share/applications/io.github.liukdiihmieu.npyquick.desktop`, replacing the `Exec=` path with the output of `which npyquick`:
 
@@ -198,6 +199,18 @@ xdg-mime default io.github.liukdiihmieu.npyquick.desktop application/x-npy
 xdg-mime default io.github.liukdiihmieu.npyquick.desktop application/x-npz
 ```
 </details>
+
+### Snap
+
+The Snap already ships the launcher and declares the `.npy` / `.npz` types, so you don't need to create a `.desktop` file — you only have to teach your system what those extensions are. Create `~/.local/share/mime/packages/npyquick.xml` (the same MIME file shown under *Manual setup* above), then:
+
+```bash
+update-mime-database ~/.local/share/mime
+xdg-mime default npyquick_npyquick.desktop application/x-npy
+xdg-mime default npyquick_npyquick.desktop application/x-npz
+```
+
+Double-clicking then works for files in your home folder (and connected removable media); for a file on another drive, use File › Open instead — the sandbox doesn't reach it.
 
 
 ## Roadmap
