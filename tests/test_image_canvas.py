@@ -64,6 +64,16 @@ def test_image_view_handles_rgb():
     assert not iv._apply_btn.isEnabled()
 
 
+def test_invalid_clim_input_reports_status_and_does_not_raise():
+    iv = ImageView()
+    iv.set_data(np.arange(100, dtype=np.float32).reshape(10, 10))
+    seen = []
+    iv.set_on_status(lambda msg, *a: seen.append(msg))
+    iv._vmin_edit.setText("abc")  # non-numeric
+    iv._apply_clim()  # must not raise
+    assert any("must be numbers" in m for m in seen)
+
+
 def test_can_handle_classmethod():
     assert ImageView.can_handle(np.zeros((10, 10), dtype=np.float32)) is True
     assert ImageView.can_handle(np.zeros((10, 10, 3), dtype=np.uint8)) is True

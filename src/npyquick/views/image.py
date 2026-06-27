@@ -684,7 +684,9 @@ class ImageView(BaseView, SpatialView, ColormappedView):
             self._active.set_clim(vmin, vmax)
             self._on_clim_change(*self.get_clim())
         except ValueError:
-            pass
+            # Non-numeric vmin/vmax: a status hint beats the prior silent no-op
+            # (a modal dialog would be too heavy for routine input validation).
+            self._on_status("vmin/vmax must be numbers")
 
     def _reset_clim(self) -> None:
         self._vmin_edit.clear()
