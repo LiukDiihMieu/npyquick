@@ -190,6 +190,40 @@ def test_summary_clean_no_finite_prefix():
     assert "NaN" not in s
 
 
+def test_summary_empty_row():
+    s = _format_array_summary(np.empty((0, 5)))
+    assert "empty" in s
+    assert "range" not in s
+
+
+def test_summary_empty_col():
+    s = _format_array_summary(np.zeros((5, 0)))
+    assert "empty" in s
+    assert "range" not in s
+
+
+def test_summary_empty_2d():
+    s = _format_array_summary(np.empty((0, 0)))
+    assert "empty" in s
+
+
+def test_summary_scalar_shows_range():
+    s = _format_array_summary(np.array(3.14))
+    assert "range" in s
+    assert "empty" not in s
+
+
+def test_summary_normal_numeric():
+    s = _format_array_summary(np.array([[1.0, 2.0], [3.0, 4.0]]))
+    assert "range [1" in s
+
+
+def test_summary_non_numeric_no_range():
+    s = _format_array_summary(np.array(["hello", "world"]))
+    assert "range" not in s
+    assert "empty" not in s
+
+
 # ---------------------------------------------------------------------------
 # ImageView — anomaly_label visibility
 # ---------------------------------------------------------------------------

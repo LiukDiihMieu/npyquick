@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 from PySide6.QtCore import QModelIndex, Qt
 
 from npyquick.core import limits
-from npyquick.views.table import NpyTableModel
+from npyquick.views.table import NpyTableModel, RawTableView
 
 
 def test_1d_array_is_single_column():
@@ -165,3 +166,38 @@ def test_header_data_returns_none_for_non_display_role():
     m = NpyTableModel()
     m.set_array(np.zeros((3, 4)))
     assert m.headerData(0, Qt.Horizontal, Qt.ToolTipRole) is None
+
+
+# ---------------------------------------------------------------------------
+# Scalar (ndim == 0) — shown as a single 1×1 cell.
+# ---------------------------------------------------------------------------
+
+def test_table_model_scalar_is_1x1():
+    m = NpyTableModel()
+    m.set_array(np.array(3.14))
+    assert m.rowCount() == 1
+    assert m.columnCount() == 1
+
+
+def test_table_model_scalar_data_is_value():
+    m = NpyTableModel()
+    m.set_array(np.array(42.0))
+    idx = m.index(0, 0)
+    assert float(m.data(idx, Qt.DisplayRole)) == pytest.approx(42.0)
+
+
+# ---------------------------------------------------------------------------
+# RawTableView — complex arrays fall back to the Table view, which surfaces
+# anomaly counts in its info label.
+# ---------------------------------------------------------------------------
+
+def test_table_accepts_complex():
+    assert RawTableView.can_handle(np.zeros((4, 4), dtype=np.complex128)) is True
+
+
+def test_table_shows_complex_anomaly():
+    arr = np.array([[complex(np.nan, 0), 1 + 1j], [2 + 2j, complex(0, np.inf)]],
+                   dtype=np.complex128)
+    tv = RawTableView()
+    tv.set_data(arr)
+    assert "NaN: 1" in tv._info.text() and "+Inf: 1" in tv._info.text()

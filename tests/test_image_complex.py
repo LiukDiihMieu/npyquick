@@ -17,6 +17,8 @@ def test_can_handle_complex_2d():
     assert ImageView.can_handle(np.zeros((4, 4), dtype=np.float32))
     assert not ImageView.can_handle(np.zeros(5, dtype=np.complex128))  # 1D
     assert not ImageView.can_handle(np.zeros((2, 2), dtype=object))
+    # complex RGB is not supported (falls through to the Table view).
+    assert not ImageView.can_handle(np.zeros((4, 4, 3), dtype=np.complex64))
 
 
 def test_complex_set_data_shows_two_real_panels():
