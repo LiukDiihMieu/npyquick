@@ -10,7 +10,7 @@ import numpy as np
 from PySide6.QtCore import Qt, QFileInfo, QSettings
 from PySide6.QtGui import QImage
 from PySide6.QtWidgets import (
-    QApplication, QFileDialog, QMainWindow, QMenu, QWidget,
+    QApplication, QFileDialog, QMainWindow, QMenu, QMessageBox, QWidget,
 )
 
 if TYPE_CHECKING:
@@ -56,7 +56,13 @@ class ExportableMixin:
 
     def copy_to_clipboard(self) -> None:
         buf = io.BytesIO()
-        self.figure.savefig(buf, format="png", dpi=300, bbox_inches="tight")
+        try:
+            self.figure.savefig(buf, format="png", dpi=300, bbox_inches="tight")
+        except Exception as exc:
+            # Rendering to an in-memory buffer rarely fails, but an unhandled
+            # exception from this slot would otherwise vanish (or abort).
+            QMessageBox.warning(self, "Copy failed", str(exc))
+            return
         buf.seek(0)
         QApplication.clipboard().setImage(QImage.fromData(buf.getvalue()))
         self._show_status(f"{self.panel_name} copied to clipboard")
@@ -95,8 +101,18 @@ class ExportableMixin:
                 dlg.selectedNameFilter(), self._EXPORT_FILTERS[first_filter]
             )
             path = f"{path}.{fmt}"
+        try:
+            self.figure.savefig(path, format=fmt, dpi=300, bbox_inches="tight")
+        except Exception as exc:
+            # A full disk, missing permissions or an unwritable path would
+            # otherwise fail silently (and could abort the process from this
+            # Qt slot), leaving the user thinking the export succeeded.
+            QMessageBox.critical(
+                self, "Export failed",
+                f"Could not save {QFileInfo(path).fileName()}:\n{exc}",
+            )
+            return
         s.setValue("last_export_dir", QFileInfo(path).absolutePath())
-        self.figure.savefig(path, format=fmt, dpi=300, bbox_inches="tight")
         self._show_status(f"{self.panel_name} saved to {QFileInfo(path).fileName()}", 3000)
 
 
