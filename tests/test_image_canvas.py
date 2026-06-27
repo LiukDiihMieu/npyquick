@@ -64,6 +64,40 @@ def test_image_view_handles_rgb():
     assert not iv._apply_btn.isEnabled()
 
 
+def test_hover_over_endpoint_hints_drag_else_shows_readout():
+    """Resting on a cross-section endpoint hints 'drag'; elsewhere the live
+    pixel readout is left untouched so value-scanning is undisturbed."""
+    from types import SimpleNamespace
+
+    iv = ImageView()
+    iv.set_data(np.arange(100, dtype=float).reshape(10, 10))
+    canvas = iv._canvas
+    seen = []
+    canvas.set_on_status(lambda msg, *a: seen.append(msg))
+
+    ep = canvas._endpoints[0]
+    canvas._on_motion(SimpleNamespace(
+        inaxes=canvas._ax, xdata=float(ep[0]), ydata=float(ep[1]), x=0, y=0,
+    ))
+    assert "Drag to move" in seen[-1]
+
+    canvas._on_motion(SimpleNamespace(
+        inaxes=canvas._ax, xdata=float(ep[0]) + 50, ydata=float(ep[1]) + 50,
+        x=0, y=0,
+    ))
+    assert "Drag to move" not in seen[-1]
+
+
+def test_invalid_clim_input_reports_status_and_does_not_raise():
+    iv = ImageView()
+    iv.set_data(np.arange(100, dtype=np.float32).reshape(10, 10))
+    seen = []
+    iv.set_on_status(lambda msg, *a: seen.append(msg))
+    iv._vmin_edit.setText("abc")  # non-numeric
+    iv._apply_clim()  # must not raise
+    assert any("must be numbers" in m for m in seen)
+
+
 def test_can_handle_classmethod():
     assert ImageView.can_handle(np.zeros((10, 10), dtype=np.float32)) is True
     assert ImageView.can_handle(np.zeros((10, 10, 3), dtype=np.uint8)) is True

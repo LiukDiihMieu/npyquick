@@ -9,7 +9,7 @@ from collections.abc import Callable
 
 import numpy as np
 from PySide6.QtCore import QKeyCombination, Qt, QSettings, QUrl
-from PySide6.QtGui import QAction, QActionGroup, QKeySequence, QShortcut
+from PySide6.QtGui import QAction, QActionGroup, QKeySequence, QPalette, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -121,6 +121,7 @@ class MainWindow(QMainWindow):
         saved = _s.value("last_dir", os.path.expanduser("~"))
         self._last_dir = saved if os.path.isdir(saved) else os.path.expanduser("~")
         self._colormap: str = _s.value("colormap", "gray")
+        self._colormap_reverse: bool = _s.value("colormap_reverse", False, type=bool)
 
         self._model = NpyDataModel()
         self._pixel_size: float = 1.0
@@ -212,6 +213,13 @@ class MainWindow(QMainWindow):
         vm.addAction(px_action)
         vm.addSeparator()
         cmap_menu = vm.addMenu("Colormap")
+        # Global "reverse" applies on top of any base map, sparing a duplicate
+        # "_r" entry for every colormap; it appends matplotlib's "_r" suffix.
+        reverse_a = QAction("Reverse", self, checkable=True)
+        reverse_a.setChecked(self._colormap_reverse)
+        reverse_a.toggled.connect(self._set_colormap_reverse)
+        cmap_menu.addAction(reverse_a)
+        cmap_menu.addSeparator()
         colormaps = [
             ("gray", "Gray"),
             ("viridis", "Viridis"),
@@ -219,9 +227,10 @@ class MainWindow(QMainWindow):
             ("inferno", "Inferno"),
             ("magma", "Magma"),
             ("cividis", "Cividis"),
+            ("twilight", "Twilight (cyclic)"),
             ("hot", "Hot"),
             ("coolwarm", "Coolwarm"),
-            ("RdBu_r", "RdBu (diverging)"),
+            ("RdBu", "RdBu (diverging)"),
             ("turbo", "Turbo"),
         ]
         group = QActionGroup(self)
@@ -273,7 +282,13 @@ class MainWindow(QMainWindow):
         # selected. Lives in the stack at an index that has no corresponding tab.
         self._empty_label = QLabel()
         self._empty_label.setAlignment(Qt.AlignCenter)
-        self._empty_label.setStyleSheet("color: #888; font-size: 16px;")
+        # Use the PlaceholderText role (not a stylesheet colour) so the muted
+        # text tracks light/dark theme switches at runtime, like body text does;
+        # a stylesheet colour would override the palette and freeze it.
+        self._empty_label.setForegroundRole(QPalette.ColorRole.PlaceholderText)
+        font = self._empty_label.font()
+        font.setPixelSize(16)
+        self._empty_label.setFont(font)
         self._empty_label.setWordWrap(True)
         self._empty_page = QWidget()
         _ep_layout = QVBoxLayout(self._empty_page)
@@ -434,7 +449,13 @@ class MainWindow(QMainWindow):
         try:
             self._model.load(path)
         except Exception as exc:
-            self._sb.showMessage(self._snap_sandbox_hint(path) or f"Error loading {path}: {exc}")
+            # A failed open is a hard failure the user just triggered; a status
+            # message would be missed (and overwritten by canvas hover readouts),
+            # so interrupt with a dialog. Reload/drag share this path.
+            QMessageBox.warning(
+                self, "Open failed",
+                self._snap_sandbox_hint(path) or f"Error loading {path}: {exc}",
+            )
             return False
 
         self._current_path = path
@@ -496,7 +517,7 @@ class MainWindow(QMainWindow):
         else:
             self._histogram_view.update_clim_marker(None, None)
         self._apply_pixel_size()
-        self._apply_colormap(self._colormap)
+        self._broadcast_colormap()
         preferred = "lineplot" if self._lineplot_view.can_handle(array) else None
         self._set_tabs_enabled(compatible, preferred)
         self._update_top_bar()
@@ -511,7 +532,15 @@ class MainWindow(QMainWindow):
         try:
             self._model.select_array(key)
         except Exception as exc:
-            self._sb.showMessage(f"Cannot load array '{key}': {exc}")
+            QMessageBox.warning(
+                self, "Cannot load array", f"Cannot load array '{key}': {exc}"
+            )
+            # The pick failed; the model still holds the prior member, so snap the
+            # dropdown back to match it (findData -> -1 reverts to no selection)
+            # instead of leaving it parked on the array that never loaded.
+            self._array_combo.setCurrentIndex(
+                self._array_combo.findData(self._model.selected_key)
+            )
             return
         self._refresh_views()
 
@@ -555,9 +584,24 @@ class MainWindow(QMainWindow):
             if isinstance(v, SpatialView):
                 v.set_pixel_size(self._pixel_size, self._pixel_unit)
 
+    @staticmethod
+    def _effective_colormap(base: str, reverse: bool) -> str:
+        # matplotlib auto-registers a reversed "<name>_r" for every colormap.
+        return f"{base}_r" if reverse else base
+
     def _apply_colormap(self, name: str) -> None:
         self._colormap = name
-        QSettings("npyquick", "npyquick").setValue("colormap", name)
+        self._broadcast_colormap()
+
+    def _set_colormap_reverse(self, reverse: bool) -> None:
+        self._colormap_reverse = reverse
+        self._broadcast_colormap()
+
+    def _broadcast_colormap(self) -> None:
+        s = QSettings("npyquick", "npyquick")
+        s.setValue("colormap", self._colormap)
+        s.setValue("colormap_reverse", self._colormap_reverse)
+        name = self._effective_colormap(self._colormap, self._colormap_reverse)
         for v in self._views:
             if isinstance(v, ColormappedView):
                 v.set_colormap(name)

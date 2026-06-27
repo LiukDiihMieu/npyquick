@@ -2,6 +2,11 @@
 from __future__ import annotations
 
 import numpy as np
+from PySide6.QtWidgets import QMessageBox
+
+
+def _index_of(combo, key):
+    return next(i for i in range(combo.count()) if combo.itemData(i) == key)
 
 
 def test_array_bar_hidden_after_npy(main_window, write_npy):
@@ -81,3 +86,37 @@ def test_first_combo_item_loads_on_first_pick(main_window, write_npz):
     # simulate user picking the first item (index 0) via activated
     main_window._array_combo.activated.emit(0)
     assert main_window._model.array is not None
+
+
+def test_failed_pick_reverts_combo_to_loaded_member(
+    main_window, write_npz, monkeypatch,
+):
+    """A selection that fails must snap the dropdown back to the member still
+    loaded, not leave it parked on the array that never materialized."""
+    arr_x = np.full((4, 4), 1.0, dtype=np.float32)
+    arr_y = np.full((6, 6), 2.0, dtype=np.float32)
+    main_window.load_file(write_npz(x=arr_x, y=arr_y))
+
+    combo = main_window._array_combo
+    ix = _index_of(combo, "x")
+    combo.setCurrentIndex(ix)
+    combo.activated.emit(ix)  # x loads successfully
+    assert main_window._model.array.shape == (4, 4)
+
+    # Next pick fails. Stub the dialog (would block) and make selection raise.
+    monkeypatch.setattr(
+        QMessageBox, "warning", lambda *a, **k: QMessageBox.StandardButton.Ok
+    )
+
+    def _boom(key):
+        raise ValueError("boom")
+
+    monkeypatch.setattr(main_window._model, "select_array", _boom)
+
+    iy = _index_of(combo, "y")
+    combo.setCurrentIndex(iy)  # the click moves the combo to y first
+    combo.activated.emit(iy)
+
+    # Reverted to x; the loaded array is untouched.
+    assert combo.currentData() == "x"
+    assert main_window._model.array.shape == (4, 4)

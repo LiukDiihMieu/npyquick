@@ -8,8 +8,24 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from PySide6.QtWidgets import QMessageBox
 
 from npyquick.app import MainWindow
+
+
+@pytest.fixture
+def captured_warning(monkeypatch):
+    """Capture QMessageBox.warning text instead of opening a (blocking) dialog.
+
+    A modal QMessageBox hangs the offscreen test platform, so failure-path
+    tests intercept the static method and assert on the message it would show.
+    """
+    seen: list[str] = []
+    monkeypatch.setattr(
+        QMessageBox, "warning",
+        lambda *args, **kwargs: seen.append(args[2]) or QMessageBox.StandardButton.Ok,
+    )
+    return seen
 
 
 # ---------------------------------------------------------------------------
@@ -17,19 +33,19 @@ from npyquick.app import MainWindow
 # ---------------------------------------------------------------------------
 
 def test_corrupt_npy_at_startup_reports_error_and_keeps_no_data(
-    main_window, tmp_path,
+    main_window, tmp_path, captured_warning,
 ):
     bad = tmp_path / "bad.npy"
     bad.write_bytes(b"not a valid numpy file")
 
     main_window.load_file(str(bad))
 
-    assert "Error" in main_window._sb.currentMessage()
+    assert any("Error" in msg for msg in captured_warning)
     assert main_window._has_data() is False
 
 
 def test_corrupt_npy_load_preserves_previously_loaded_array(
-    main_window, write_npy, tmp_path,
+    main_window, write_npy, tmp_path, captured_warning,
 ):
     """A failed load shows an error and leaves the prior array in place."""
     good_path = write_npy(np.arange(20, dtype=np.float32).reshape(4, 5))
@@ -41,7 +57,7 @@ def test_corrupt_npy_load_preserves_previously_loaded_array(
     bad.write_bytes(b"definitely not a numpy file")
     main_window.load_file(str(bad))
 
-    assert "Error" in main_window._sb.currentMessage()
+    assert any("Error" in msg for msg in captured_warning)
     np.testing.assert_array_equal(main_window._model.array, prior)
 
 
@@ -94,12 +110,24 @@ def test_sandbox_hint_absent_when_path_is_visible(tmp_path, monkeypatch):
     assert MainWindow._snap_sandbox_hint(str(f)) is None
 
 
-def test_load_file_uses_sandbox_hint_when_confined(main_window, monkeypatch):
+# ---------------------------------------------------------------------------
+# Colormap reverse: canonical matplotlib names + an "_r" suffix toggle.
+# ---------------------------------------------------------------------------
+
+def test_effective_colormap_appends_reverse_suffix():
+    assert MainWindow._effective_colormap("viridis", False) == "viridis"
+    assert MainWindow._effective_colormap("viridis", True) == "viridis_r"
+    assert MainWindow._effective_colormap("RdBu", True) == "RdBu_r"
+
+
+def test_load_file_uses_sandbox_hint_when_confined(
+    main_window, monkeypatch, captured_warning,
+):
     """A failed load of an out-of-sandbox path reports the hint, not the raw error."""
     monkeypatch.setenv("SNAP", "/snap/npyquick/x1")
     monkeypatch.setenv("SNAP_REAL_HOME", "/home/alice")
     main_window.load_file("/nonexistent_drive/experiments/missing.npy")
-    assert "File > Open" in main_window._sb.currentMessage()
+    assert any("File > Open" in msg for msg in captured_warning)
 
 
 # ---------------------------------------------------------------------------
@@ -168,8 +196,10 @@ def test_reload_success_shows_reloaded_message(main_window, write_npy):
     assert main_window._sb.currentMessage() == "File reloaded"
 
 
-def test_reload_failure_preserves_error_message(main_window, write_npy, tmp_path):
-    """A failed reload must not overwrite the error with 'File reloaded'."""
+def test_reload_failure_preserves_error_message(
+    main_window, write_npy, tmp_path, captured_warning,
+):
+    """A failed reload must warn and not claim 'File reloaded'."""
     main_window.load_file(write_npy(np.arange(10, dtype=np.float32)))
 
     # Overwrite the file on disk with garbage so the next load fails.
@@ -179,5 +209,5 @@ def test_reload_failure_preserves_error_message(main_window, write_npy, tmp_path
 
     main_window._reload_file()
 
-    assert "Error" in main_window._sb.currentMessage()
+    assert any("Error" in msg for msg in captured_warning)
     assert "reloaded" not in main_window._sb.currentMessage()

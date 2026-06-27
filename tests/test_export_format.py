@@ -12,7 +12,7 @@ savefig.
 from __future__ import annotations
 
 import pytest
-from PySide6.QtWidgets import QFileDialog
+from PySide6.QtWidgets import QFileDialog, QMessageBox
 
 from npyquick.views.histogram import HistogramCanvas
 
@@ -80,3 +80,42 @@ def test_unreported_filter_falls_back_to_default(canvas, monkeypatch, tmp_path):
     path, kwargs = _drive_export(canvas, monkeypatch, returned_path=base, selected_filter="")
     assert path == f"{base}.png"
     assert kwargs["format"] == "png"
+
+
+def test_export_save_failure_warns_and_does_not_raise(canvas, monkeypatch, tmp_path):
+    """A savefig error (full disk, no permission) must surface a dialog instead
+    of escaping the Qt slot or silently 'succeeding'."""
+    monkeypatch.setattr(QFileDialog, "exec", lambda self: 1)
+    monkeypatch.setattr(
+        QFileDialog, "selectedFiles", lambda self: [str(tmp_path / "Histogram.png")]
+    )
+    monkeypatch.setattr(QFileDialog, "selectedNameFilter", lambda self: "PNG (*.png)")
+
+    def boom(*a, **k):
+        raise OSError("No space left on device")
+
+    monkeypatch.setattr(canvas.figure, "savefig", boom)
+
+    seen = []
+    monkeypatch.setattr(
+        QMessageBox, "critical", lambda *a, **k: seen.append(a[2]) or QMessageBox.StandardButton.Ok
+    )
+
+    canvas.export_figure()  # must not raise
+    assert any("No space left" in msg for msg in seen)
+
+
+def test_copy_failure_warns_and_does_not_raise(canvas, monkeypatch):
+    """A render error during copy must surface a dialog, not abort the slot."""
+    def boom(*a, **k):
+        raise RuntimeError("render exploded")
+
+    monkeypatch.setattr(canvas.figure, "savefig", boom)
+
+    seen = []
+    monkeypatch.setattr(
+        QMessageBox, "warning", lambda *a, **k: seen.append(a[2]) or QMessageBox.StandardButton.Ok
+    )
+
+    canvas.copy_to_clipboard()  # must not raise
+    assert any("render exploded" in msg for msg in seen)
