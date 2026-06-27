@@ -121,6 +121,7 @@ class MainWindow(QMainWindow):
         saved = _s.value("last_dir", os.path.expanduser("~"))
         self._last_dir = saved if os.path.isdir(saved) else os.path.expanduser("~")
         self._colormap: str = _s.value("colormap", "gray")
+        self._colormap_reverse: bool = _s.value("colormap_reverse", False, type=bool)
 
         self._model = NpyDataModel()
         self._pixel_size: float = 1.0
@@ -212,6 +213,14 @@ class MainWindow(QMainWindow):
         vm.addAction(px_action)
         vm.addSeparator()
         cmap_menu = vm.addMenu("Colormap")
+        # Global "reverse" applies on top of any base map, sparing a duplicate
+        # "_r" entry for every colormap. It toggles the matplotlib "_r" suffix
+        # (adding it, or removing it from a base that already ends in "_r").
+        reverse_a = QAction("Reverse", self, checkable=True)
+        reverse_a.setChecked(self._colormap_reverse)
+        reverse_a.toggled.connect(self._set_colormap_reverse)
+        cmap_menu.addAction(reverse_a)
+        cmap_menu.addSeparator()
         colormaps = [
             ("gray", "Gray"),
             ("viridis", "Viridis"),
@@ -219,6 +228,7 @@ class MainWindow(QMainWindow):
             ("inferno", "Inferno"),
             ("magma", "Magma"),
             ("cividis", "Cividis"),
+            ("twilight", "Twilight (cyclic)"),
             ("hot", "Hot"),
             ("coolwarm", "Coolwarm"),
             ("RdBu_r", "RdBu (diverging)"),
@@ -496,7 +506,7 @@ class MainWindow(QMainWindow):
         else:
             self._histogram_view.update_clim_marker(None, None)
         self._apply_pixel_size()
-        self._apply_colormap(self._colormap)
+        self._broadcast_colormap()
         preferred = "lineplot" if self._lineplot_view.can_handle(array) else None
         self._set_tabs_enabled(compatible, preferred)
         self._update_top_bar()
@@ -555,9 +565,27 @@ class MainWindow(QMainWindow):
             if isinstance(v, SpatialView):
                 v.set_pixel_size(self._pixel_size, self._pixel_unit)
 
+    @staticmethod
+    def _effective_colormap(base: str, reverse: bool) -> str:
+        if not reverse:
+            return base
+        # matplotlib reversal is the "_r" suffix; toggle it so a base that is
+        # already reversed (e.g. RdBu_r) maps back to its forward form.
+        return base[:-2] if base.endswith("_r") else base + "_r"
+
     def _apply_colormap(self, name: str) -> None:
         self._colormap = name
-        QSettings("npyquick", "npyquick").setValue("colormap", name)
+        self._broadcast_colormap()
+
+    def _set_colormap_reverse(self, reverse: bool) -> None:
+        self._colormap_reverse = reverse
+        self._broadcast_colormap()
+
+    def _broadcast_colormap(self) -> None:
+        s = QSettings("npyquick", "npyquick")
+        s.setValue("colormap", self._colormap)
+        s.setValue("colormap_reverse", self._colormap_reverse)
+        name = self._effective_colormap(self._colormap, self._colormap_reverse)
         for v in self._views:
             if isinstance(v, ColormappedView):
                 v.set_colormap(name)
