@@ -5,4 +5,4 @@
 # this literal via [tool.hatch.version] in pyproject.toml, so the source tree
 # and the built distribution always report the same version — and importing
 # from a checkout never depends on installed package metadata.
-__version__ = "0.1.3"
+__version__ = "0.1.4"

@@ -1,6 +1,6 @@
 ; Inno Setup script for the npyquick Windows installer.
 ; Compile with the Inno Setup compiler, passing the version:
-;     ISCC /DMyAppVersion=0.1.3 packaging\windows\npyquick.iss
+;     ISCC /DMyAppVersion=x.x.x packaging\windows\npyquick.iss
 ; packaging\windows\build.ps1 reads the version from the installed package and
 ; passes it automatically. The payload is the PyInstaller onedir output in
 ; dist\npyquick\, so run PyInstaller before compiling this script.
