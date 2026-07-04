@@ -8,14 +8,17 @@ import sys
 from collections.abc import Callable
 
 import numpy as np
-from PySide6.QtCore import QKeyCombination, Qt, QSettings, QUrl
+from PySide6.QtCore import QEvent, QKeyCombination, Qt, QSettings, QUrl
 from PySide6.QtGui import (
     QAction,
     QActionGroup,
+    QColor,
     QIcon,
     QImage,
     QKeySequence,
+    QPainter,
     QPalette,
+    QPen,
     QPixmap,
     QShortcut,
 )
@@ -132,6 +135,43 @@ def _format_array_summary(array: np.ndarray, stats: ArrayStats | None = None) ->
             if stats.has_anomaly:
                 parts.append(stats.anomaly_str())
     return "  |  ".join(parts)
+
+
+class DropOverlay(QWidget):
+    """Translucent "drop to open" hint shown while a valid drag hovers.
+
+    Child of the central container; tracks its size via an event filter (the
+    standard Qt overlay pattern) and is mouse/drop-transparent so it can never
+    intercept the drag it is announcing. Colors come from the Highlight
+    palette role, so the overlay follows the theme with no constants.
+    """
+
+    def __init__(self, parent: QWidget) -> None:
+        super().__init__(parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self.setAcceptDrops(False)
+        self.hide()
+        parent.installEventFilter(self)
+
+    def eventFilter(self, obj, ev) -> bool:
+        if ev.type() == QEvent.Type.Resize:
+            self.resize(ev.size())
+        return False  # observe only; never consume the parent's events
+
+    def paintEvent(self, ev) -> None:
+        color = self.palette().color(QPalette.ColorRole.Highlight)
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        fill = QColor(color)
+        fill.setAlpha(35)
+        painter.fillRect(self.rect(), fill)
+        pen = QPen(color, 2, Qt.PenStyle.DashLine)
+        painter.setPen(pen)
+        painter.drawRoundedRect(self.rect().adjusted(12, 12, -12, -12), 8, 8)
+        font = painter.font()
+        font.setPixelSize(16)  # matches the empty-state guidance text
+        painter.setFont(font)
+        painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "Drop to open")
 
 
 class MainWindow(QMainWindow):
@@ -369,6 +409,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(self._tabs)
         layout.addWidget(self._stack)
         self.setCentralWidget(container)
+        self._drop_overlay = DropOverlay(container)
 
         self._set_tabs_enabled([])
         self._show_empty(
@@ -734,8 +775,14 @@ class MainWindow(QMainWindow):
         urls = ev.mimeData().urls()
         if urls and all(QUrl.toLocalFile(u).lower().endswith((".npy", ".npz")) for u in urls):
             ev.acceptProposedAction()
+            self._drop_overlay.show()
+            self._drop_overlay.raise_()
+
+    def dragLeaveEvent(self, ev) -> None:
+        self._drop_overlay.hide()
 
     def dropEvent(self, ev) -> None:
+        self._drop_overlay.hide()
         path = QUrl.toLocalFile(ev.mimeData().urls()[0])
         self.load_file(path)
 
