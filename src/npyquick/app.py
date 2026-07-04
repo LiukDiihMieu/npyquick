@@ -348,6 +348,9 @@ class MainWindow(QMainWindow):
             v.set_on_status(self._sb.showMessage)
             v.set_on_canvas_selected(self.set_selected_export_target)
         self._image_view.set_on_clim_change(self._histogram_view.update_clim_marker)
+        # Reverse direction: dragging a marker on the histogram drives the
+        # image clim live (a silent sink — the two paths never chain).
+        self._histogram_view.set_on_clim_dragged(self._image_view.set_clim_from_histogram)
 
         self._stack = QStackedWidget()
         for v in self._views:
