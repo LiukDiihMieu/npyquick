@@ -227,6 +227,14 @@ class MainWindow(QMainWindow):
         open_a.triggered.connect(self.open_file)
         fm.addAction(open_a)
 
+        # Rebuilt on every open, like the dynamic Export menu below; nothing
+        # else lives in this submenu, so it can simply clear() and repopulate.
+        self._recent_menu = fm.addMenu("Open &Recent")
+        # Off by default in QMenu; needed for the full-path (and Snap-hint)
+        # tooltips on the entries.
+        self._recent_menu.setToolTipsVisible(True)
+        self._recent_menu.aboutToShow.connect(self._rebuild_recent_menu)
+
         reload_a = QAction("&Reload", self)
         # setShortcuts (plural) applies every platform binding for the key —
         # e.g. Ctrl+R and F5 on GNOME, F5 alone on Windows/macOS.
@@ -528,6 +536,7 @@ class MainWindow(QMainWindow):
 
         self._current_path = path
         self._reload_action.setEnabled(True)
+        self._add_recent_file(path)
         self._last_dir = os.path.dirname(os.path.abspath(path))
         QSettings("npyquick", "npyquick").setValue("last_dir", self._last_dir)
         self.setWindowTitle(f"npyquick — {os.path.basename(path)}")
@@ -615,6 +624,75 @@ class MainWindow(QMainWindow):
     def _reload_file(self) -> None:
         if self._current_path and self.load_file(self._current_path):
             self._sb.showMessage("File reloaded", 3000)
+
+    # ------------------------------------------------------------------
+    # Recent files
+    # ------------------------------------------------------------------
+
+    _RECENT_MAX = 8
+
+    @staticmethod
+    def _recent_files() -> list[str]:
+        # Normalize the INI backend's quirks: a stored empty list reads back as
+        # None, and a single-element list reads back as a plain string.
+        val = QSettings("npyquick", "npyquick").value("recent_files", [])
+        if val is None:
+            return []
+        if isinstance(val, str):
+            return [val] if val else []
+        return list(val)
+
+    def _add_recent_file(self, path: str) -> None:
+        path = os.path.abspath(path)
+        # Files picked through the XDG document portal (a confined Snap opening
+        # something outside its sandbox) arrive as /run/user/<uid>/doc/ paths
+        # whose grants may not survive a restart — recording them would leave
+        # zombie entries, so skip them. Plain home-directory paths, the common
+        # case, are unaffected.
+        if path.startswith("/run/user/"):
+            return
+        recent = [p for p in self._recent_files() if p != path]
+        recent.insert(0, path)
+        QSettings("npyquick", "npyquick").setValue(
+            "recent_files", recent[: self._RECENT_MAX]
+        )
+
+    def _clear_recent(self) -> None:
+        QSettings("npyquick", "npyquick").setValue("recent_files", [])
+
+    def _rebuild_recent_menu(self) -> None:
+        self._recent_menu.clear()
+        recent = self._recent_files()
+        if not recent:
+            a = self._recent_menu.addAction("(no recent files)")
+            a.setEnabled(False)
+            return
+        home = os.path.expanduser("~")
+        for path in recent:
+            display = path
+            if path == home or path.startswith(home + os.sep):
+                display = "~" + path[len(home):]
+            # "&" is the menu mnemonic marker; a filename like "Q&A.npy" would
+            # otherwise drop the "&" and turn the next char into an accelerator.
+            # Escape only the visible label — the tooltip and the loaded path
+            # keep the real name.
+            a = self._recent_menu.addAction(display.replace("&", "&&"))
+            a.setToolTip(path)
+            if os.path.exists(path):
+                a.triggered.connect(lambda checked, p=path: self.load_file(p))
+            else:
+                # Greyed, not pruned: files on a temporarily unmounted drive
+                # come back on their own; Clear Recent handles real cleanup.
+                a.setEnabled(False)
+                if os.environ.get("SNAP"):
+                    # Under Snap confinement exists() is also False for real
+                    # files outside the sandbox, so say how to reach them.
+                    a.setToolTip(
+                        f"{path}\nNot reachable from the Snap sandbox — "
+                        "use File > Open to select it."
+                    )
+        self._recent_menu.addSeparator()
+        self._recent_menu.addAction("Clear Recent", self._clear_recent)
 
     def _bind_shortcut(self, seq: QKeySequence, slot: Callable[[], None]) -> QShortcut:
         sc = QShortcut(seq, self)
