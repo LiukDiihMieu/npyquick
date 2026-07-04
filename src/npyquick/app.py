@@ -9,7 +9,16 @@ from collections.abc import Callable
 
 import numpy as np
 from PySide6.QtCore import QKeyCombination, Qt, QSettings, QUrl
-from PySide6.QtGui import QAction, QActionGroup, QKeySequence, QPalette, QShortcut
+from PySide6.QtGui import (
+    QAction,
+    QActionGroup,
+    QIcon,
+    QImage,
+    QKeySequence,
+    QPalette,
+    QPixmap,
+    QShortcut,
+)
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -20,6 +29,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QStackedWidget,
     QStatusBar,
+    QStyle,
     QTabBar,
     QVBoxLayout,
     QWidget,
@@ -92,6 +102,20 @@ def _apply_canvas_theme() -> None:
         return
     import matplotlib.pyplot as plt
     plt.style.use("dark_background")
+
+
+def _colormap_icon(name: str, size: int, dpr: float) -> QIcon:
+    """Square left-to-right gradient swatch of a matplotlib colormap."""
+    from matplotlib import colormaps
+    n = max(1, round(size * dpr))
+    rgba = colormaps[name](np.linspace(0.0, 1.0, n), bytes=True)  # (n, 4) uint8
+    row = np.ascontiguousarray(rgba)
+    # QImage wraps the numpy buffer without owning it; copy() detaches before
+    # the buffer goes out of scope.
+    img = QImage(row.data, n, 1, QImage.Format.Format_RGBA8888).copy()
+    img = img.scaled(n, n)  # stretch the 1-px gradient row into a square
+    img.setDevicePixelRatio(dpr)
+    return QIcon(QPixmap.fromImage(img))
 
 
 def _format_array_summary(array: np.ndarray, stats: ArrayStats | None = None) -> str:
@@ -235,12 +259,15 @@ class MainWindow(QMainWindow):
         ]
         group = QActionGroup(self)
         group.setExclusive(True)
+        self._cmap_actions: list[tuple[QAction, str]] = []
         for name, label in colormaps:
             a = QAction(label, self, checkable=True)
             a.setChecked(name == self._colormap)
             a.triggered.connect(lambda checked, n=name: self._apply_colormap(n))
             group.addAction(a)
             cmap_menu.addAction(a)
+            self._cmap_actions.append((a, name))
+        self._refresh_colormap_icons()
 
         hm = self.menuBar().addMenu("&Help")
         about_a = QAction("&About npyquick", self)
@@ -595,7 +622,16 @@ class MainWindow(QMainWindow):
 
     def _set_colormap_reverse(self, reverse: bool) -> None:
         self._colormap_reverse = reverse
+        self._refresh_colormap_icons()  # swatches flip along with the maps
         self._broadcast_colormap()
+
+    def _refresh_colormap_icons(self) -> None:
+        size = self.style().pixelMetric(QStyle.PixelMetric.PM_SmallIconSize)
+        dpr = self.devicePixelRatio()
+        for a, base in self._cmap_actions:
+            a.setIcon(_colormap_icon(
+                self._effective_colormap(base, self._colormap_reverse), size, dpr
+            ))
 
     def _broadcast_colormap(self) -> None:
         s = QSettings("npyquick", "npyquick")
