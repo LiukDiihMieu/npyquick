@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
 
 from ..core import limits
 from ..core.stats import ArrayStats, array_stats, is_real_numeric
-from .base import BaseView, ExportableMixin
+from .base import BaseView, CautionLabel, ErrorLabel, ExportableMixin
 
 
 class LineplotCanvas(ExportableMixin, FigureCanvas):
@@ -287,12 +287,10 @@ class LineplotView(BaseView):
         self._stats_label = QLabel()
         self._stats_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
 
-        self._sample_label = QLabel()
-        self._sample_label.setStyleSheet("color: #b8860b;")
+        self._sample_label = CautionLabel()
         self._sample_label.setVisible(False)
 
-        self._anomaly_label = QLabel()
-        self._anomaly_label.setStyleSheet("color: red;")
+        self._anomaly_label = ErrorLabel()
         self._anomaly_label.setVisible(False)
 
         ctrl = QWidget()
