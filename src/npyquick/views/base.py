@@ -7,14 +7,70 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 import numpy as np
-from PySide6.QtCore import Qt, QFileInfo, QSettings
-from PySide6.QtGui import QImage
+from PySide6.QtCore import Qt, QEvent, QFileInfo, QSettings
+from PySide6.QtGui import QColor, QImage, QPalette
 from PySide6.QtWidgets import (
-    QApplication, QFileDialog, QMainWindow, QMenu, QMessageBox, QWidget,
+    QApplication, QFileDialog, QLabel, QMainWindow, QMenu, QMessageBox, QWidget,
 )
 
 if TYPE_CHECKING:
     from ..core.stats import ArrayStats
+
+
+def _is_dark_scheme() -> bool:
+    # Same criterion as the canvas theme (app._apply_canvas_theme), by
+    # deliberate convention: one definition of "dark" across the app. Unknown
+    # (headless, or platforms that don't report a scheme) counts as light.
+    app = QApplication.instance()
+    return app is not None and app.styleHints().colorScheme() == Qt.ColorScheme.Dark
+
+
+class _ThemedLabel(QLabel):
+    """QLabel whose warning color re-resolves on runtime theme switches.
+
+    QPalette has no error/caution *role* to ride the way the empty-state
+    text rides PlaceholderText, but the color still goes through the palette
+    (the label's WindowText foreground role) rather than a stylesheet, to
+    keep one text-coloring mechanism across the app. The per-scheme color is
+    re-applied from changeEvent(PaletteChange): an OS theme switch updates
+    the application palette alongside the color scheme, so the event doubles
+    as the scheme-change hook. Unlike the canvas (whose matplotlib style is
+    fixed at startup), recoloring a label is free, so these track switches
+    live.
+    """
+
+    _DARK = ""
+    _LIGHT = ""
+
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self._apply_color()
+
+    def changeEvent(self, ev) -> None:
+        if ev.type() == QEvent.Type.PaletteChange:
+            self._apply_color()
+        super().changeEvent(ev)
+
+    def _apply_color(self) -> None:
+        color = QColor(self._DARK if _is_dark_scheme() else self._LIGHT)
+        role = QPalette.ColorRole.WindowText
+        # setPalette itself feeds back a PaletteChange; only setting on an
+        # actual change breaks that cycle.
+        if self.palette().color(role) == color:
+            return
+        pal = self.palette()
+        pal.setColor(role, color)
+        self.setPalette(pal)
+
+
+class ErrorLabel(_ThemedLabel):
+    """Errors and anomalies (NaN/Inf counts, invalid input)."""
+    _DARK, _LIGHT = "#ff6b6b", "#b00020"
+
+
+class CautionLabel(_ThemedLabel):
+    """Cautions (sampled / downsampled / truncated)."""
+    _DARK, _LIGHT = "#e5b567", "#b8860b"
 
 
 class ExportableMixin:

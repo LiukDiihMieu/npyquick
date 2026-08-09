@@ -8,8 +8,20 @@ import sys
 from collections.abc import Callable
 
 import numpy as np
-from PySide6.QtCore import QKeyCombination, Qt, QSettings, QUrl
-from PySide6.QtGui import QAction, QActionGroup, QKeySequence, QPalette, QShortcut
+from PySide6.QtCore import QEvent, QKeyCombination, Qt, QSettings, QUrl
+from PySide6.QtGui import (
+    QAction,
+    QActionGroup,
+    QColor,
+    QIcon,
+    QImage,
+    QKeySequence,
+    QPainter,
+    QPalette,
+    QPen,
+    QPixmap,
+    QShortcut,
+)
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -20,6 +32,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QStackedWidget,
     QStatusBar,
+    QStyle,
     QTabBar,
     QVBoxLayout,
     QWidget,
@@ -94,6 +107,20 @@ def _apply_canvas_theme() -> None:
     plt.style.use("dark_background")
 
 
+def _colormap_icon(name: str, size: int, dpr: float) -> QIcon:
+    """Square left-to-right gradient swatch of a matplotlib colormap."""
+    from matplotlib import colormaps
+    n = max(1, round(size * dpr))
+    rgba = colormaps[name](np.linspace(0.0, 1.0, n), bytes=True)  # (n, 4) uint8
+    row = np.ascontiguousarray(rgba)
+    # QImage wraps the numpy buffer without owning it; copy() detaches before
+    # the buffer goes out of scope.
+    img = QImage(row.data, n, 1, QImage.Format.Format_RGBA8888).copy()
+    img = img.scaled(n, n)  # stretch the 1-px gradient row into a square
+    img.setDevicePixelRatio(dpr)
+    return QIcon(QPixmap.fromImage(img))
+
+
 def _format_array_summary(array: np.ndarray, stats: ArrayStats | None = None) -> str:
     parts = [f"shape {array.shape}", f"dtype {array.dtype}"]
     if array.size == 0:
@@ -108,6 +135,43 @@ def _format_array_summary(array: np.ndarray, stats: ArrayStats | None = None) ->
             if stats.has_anomaly:
                 parts.append(stats.anomaly_str())
     return "  |  ".join(parts)
+
+
+class DropOverlay(QWidget):
+    """Translucent "drop to open" hint shown while a valid drag hovers.
+
+    Child of the central container; tracks its size via an event filter (the
+    standard Qt overlay pattern) and is mouse/drop-transparent so it can never
+    intercept the drag it is announcing. Colors come from the Highlight
+    palette role, so the overlay follows the theme with no constants.
+    """
+
+    def __init__(self, parent: QWidget) -> None:
+        super().__init__(parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self.setAcceptDrops(False)
+        self.hide()
+        parent.installEventFilter(self)
+
+    def eventFilter(self, obj, ev) -> bool:
+        if ev.type() == QEvent.Type.Resize:
+            self.resize(ev.size())
+        return False  # observe only; never consume the parent's events
+
+    def paintEvent(self, ev) -> None:
+        color = self.palette().color(QPalette.ColorRole.Highlight)
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        fill = QColor(color)
+        fill.setAlpha(35)
+        painter.fillRect(self.rect(), fill)
+        pen = QPen(color, 2, Qt.PenStyle.DashLine)
+        painter.setPen(pen)
+        painter.drawRoundedRect(self.rect().adjusted(12, 12, -12, -12), 8, 8)
+        font = painter.font()
+        font.setPixelSize(16)  # matches the empty-state guidance text
+        painter.setFont(font)
+        painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "Drop to open")
 
 
 class MainWindow(QMainWindow):
@@ -162,6 +226,14 @@ class MainWindow(QMainWindow):
         open_a.setShortcut(QKeySequence.StandardKey.Open)
         open_a.triggered.connect(self.open_file)
         fm.addAction(open_a)
+
+        # Rebuilt on every open, like the dynamic Export menu below; nothing
+        # else lives in this submenu, so it can simply clear() and repopulate.
+        self._recent_menu = fm.addMenu("Open &Recent")
+        # Off by default in QMenu; needed for the full-path (and Snap-hint)
+        # tooltips on the entries.
+        self._recent_menu.setToolTipsVisible(True)
+        self._recent_menu.aboutToShow.connect(self._rebuild_recent_menu)
 
         reload_a = QAction("&Reload", self)
         # setShortcuts (plural) applies every platform binding for the key —
@@ -235,12 +307,15 @@ class MainWindow(QMainWindow):
         ]
         group = QActionGroup(self)
         group.setExclusive(True)
+        self._cmap_actions: list[tuple[QAction, str]] = []
         for name, label in colormaps:
             a = QAction(label, self, checkable=True)
             a.setChecked(name == self._colormap)
             a.triggered.connect(lambda checked, n=name: self._apply_colormap(n))
             group.addAction(a)
             cmap_menu.addAction(a)
+            self._cmap_actions.append((a, name))
+        self._refresh_colormap_icons()
 
         hm = self.menuBar().addMenu("&Help")
         about_a = QAction("&About npyquick", self)
@@ -273,6 +348,9 @@ class MainWindow(QMainWindow):
             v.set_on_status(self._sb.showMessage)
             v.set_on_canvas_selected(self.set_selected_export_target)
         self._image_view.set_on_clim_change(self._histogram_view.update_clim_marker)
+        # Reverse direction: dragging a marker on the histogram drives the
+        # image clim live (a silent sink — the two paths never chain).
+        self._histogram_view.set_on_clim_dragged(self._image_view.set_clim_from_histogram)
 
         self._stack = QStackedWidget()
         for v in self._views:
@@ -342,6 +420,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(self._tabs)
         layout.addWidget(self._stack)
         self.setCentralWidget(container)
+        self._drop_overlay = DropOverlay(container)
 
         self._set_tabs_enabled([])
         self._show_empty(
@@ -460,6 +539,7 @@ class MainWindow(QMainWindow):
 
         self._current_path = path
         self._reload_action.setEnabled(True)
+        self._add_recent_file(path)
         self._last_dir = os.path.dirname(os.path.abspath(path))
         QSettings("npyquick", "npyquick").setValue("last_dir", self._last_dir)
         self.setWindowTitle(f"npyquick — {os.path.basename(path)}")
@@ -548,6 +628,75 @@ class MainWindow(QMainWindow):
         if self._current_path and self.load_file(self._current_path):
             self._sb.showMessage("File reloaded", 3000)
 
+    # ------------------------------------------------------------------
+    # Recent files
+    # ------------------------------------------------------------------
+
+    _RECENT_MAX = 8
+
+    @staticmethod
+    def _recent_files() -> list[str]:
+        # Normalize the INI backend's quirks: a stored empty list reads back as
+        # None, and a single-element list reads back as a plain string.
+        val = QSettings("npyquick", "npyquick").value("recent_files", [])
+        if val is None:
+            return []
+        if isinstance(val, str):
+            return [val] if val else []
+        return list(val)
+
+    def _add_recent_file(self, path: str) -> None:
+        path = os.path.abspath(path)
+        # Files picked through the XDG document portal (a confined Snap opening
+        # something outside its sandbox) arrive as /run/user/<uid>/doc/ paths
+        # whose grants may not survive a restart — recording them would leave
+        # zombie entries, so skip them. Plain home-directory paths, the common
+        # case, are unaffected.
+        if path.startswith("/run/user/"):
+            return
+        recent = [p for p in self._recent_files() if p != path]
+        recent.insert(0, path)
+        QSettings("npyquick", "npyquick").setValue(
+            "recent_files", recent[: self._RECENT_MAX]
+        )
+
+    def _clear_recent(self) -> None:
+        QSettings("npyquick", "npyquick").setValue("recent_files", [])
+
+    def _rebuild_recent_menu(self) -> None:
+        self._recent_menu.clear()
+        recent = self._recent_files()
+        if not recent:
+            a = self._recent_menu.addAction("(no recent files)")
+            a.setEnabled(False)
+            return
+        home = os.path.expanduser("~")
+        for path in recent:
+            display = path
+            if path == home or path.startswith(home + os.sep):
+                display = "~" + path[len(home):]
+            # "&" is the menu mnemonic marker; a filename like "Q&A.npy" would
+            # otherwise drop the "&" and turn the next char into an accelerator.
+            # Escape only the visible label — the tooltip and the loaded path
+            # keep the real name.
+            a = self._recent_menu.addAction(display.replace("&", "&&"))
+            a.setToolTip(path)
+            if os.path.exists(path):
+                a.triggered.connect(lambda checked, p=path: self.load_file(p))
+            else:
+                # Greyed, not pruned: files on a temporarily unmounted drive
+                # come back on their own; Clear Recent handles real cleanup.
+                a.setEnabled(False)
+                if os.environ.get("SNAP"):
+                    # Under Snap confinement exists() is also False for real
+                    # files outside the sandbox, so say how to reach them.
+                    a.setToolTip(
+                        f"{path}\nNot reachable from the Snap sandbox — "
+                        "use File > Open to select it."
+                    )
+        self._recent_menu.addSeparator()
+        self._recent_menu.addAction("Clear Recent", self._clear_recent)
+
     def _bind_shortcut(self, seq: QKeySequence, slot: Callable[[], None]) -> QShortcut:
         sc = QShortcut(seq, self)
         sc.activated.connect(slot)
@@ -595,7 +744,16 @@ class MainWindow(QMainWindow):
 
     def _set_colormap_reverse(self, reverse: bool) -> None:
         self._colormap_reverse = reverse
+        self._refresh_colormap_icons()  # swatches flip along with the maps
         self._broadcast_colormap()
+
+    def _refresh_colormap_icons(self) -> None:
+        size = self.style().pixelMetric(QStyle.PixelMetric.PM_SmallIconSize)
+        dpr = self.devicePixelRatio()
+        for a, base in self._cmap_actions:
+            a.setIcon(_colormap_icon(
+                self._effective_colormap(base, self._colormap_reverse), size, dpr
+            ))
 
     def _broadcast_colormap(self) -> None:
         s = QSettings("npyquick", "npyquick")
@@ -698,8 +856,14 @@ class MainWindow(QMainWindow):
         urls = ev.mimeData().urls()
         if urls and all(QUrl.toLocalFile(u).lower().endswith((".npy", ".npz")) for u in urls):
             ev.acceptProposedAction()
+            self._drop_overlay.show()
+            self._drop_overlay.raise_()
+
+    def dragLeaveEvent(self, ev) -> None:
+        self._drop_overlay.hide()
 
     def dropEvent(self, ev) -> None:
+        self._drop_overlay.hide()
         path = QUrl.toLocalFile(ev.mimeData().urls()[0])
         self.load_file(path)
 

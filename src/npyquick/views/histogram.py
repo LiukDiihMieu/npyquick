@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
 
 from ..core import complexproj, limits
 from ..core.stats import ArrayStats, array_stats, is_real_numeric
-from .base import BaseView, ExportableMixin
+from .base import BaseView, CautionLabel, ErrorLabel, ExportableMixin
 
 _BIN_OPTIONS = ["auto", "64", "128", "256", "512"]
 
@@ -39,6 +39,8 @@ def finite_sample(array: np.ndarray) -> tuple[np.ndarray, int, int]:
 
 class HistogramCanvas(ExportableMixin, FigureCanvas):
     panel_name = "Histogram"
+    _MARKER_HIT_RADIUS = 12  # px; mirrors ImageCanvas._HIT_RADIUS
+
     def __init__(self) -> None:
         self._fig = Figure(constrained_layout=True)
         super().__init__(self._fig)
@@ -60,11 +62,18 @@ class HistogramCanvas(ExportableMixin, FigureCanvas):
         self._vline_hi = None
         self._vtext_lo = None
         self._vtext_hi = None
+        self._dragging_marker: int | None = None  # 0 = vmin, 1 = vmax
+        self._on_clim_dragged: Callable = lambda vmin, vmax: None
 
         self.mpl_connect("button_press_event", self._on_press)
         self.mpl_connect("motion_notify_event", self._on_motion)
+        self.mpl_connect("button_release_event", self._on_release)
         self.mpl_connect("axes_leave_event", self._on_axes_leave)
         self.mpl_connect("scroll_event", self._on_scroll)
+
+    def set_on_clim_dragged(self, cb: Callable) -> None:
+        """Register a callback fired with (vmin, vmax) while a marker drags."""
+        self._on_clim_dragged = cb
 
     def set_on_status(self, cb: Callable) -> None:
         self._on_status = cb
@@ -188,20 +197,65 @@ class HistogramCanvas(ExportableMixin, FigureCanvas):
             self._draw_clim_markers(*self._clim)
         self.draw_idle()
 
+    def _marker_hit(self, ev) -> int | None:
+        """Index of the clim marker within pixel radius of the event, x-only."""
+        if self._vline_lo is None or self._clim is None:
+            return None
+        for i, v in enumerate(self._clim):
+            px = self._ax.transData.transform((v, 0.0))[0]
+            if abs(ev.x - px) < self._MARKER_HIT_RADIUS:
+                return i
+        return None
+
     def _on_press(self, ev) -> None:
         # Any click anywhere on this canvas selects it as the export target.
         self._on_selected(self)
         if ev.dblclick and ev.inaxes is self._ax:
             self.xlim_full()
+            return  # a double-click must never start a marker drag
+        if ev.button == 1 and ev.inaxes is self._ax:
+            self._dragging_marker = self._marker_hit(ev)
 
     def _on_motion(self, ev) -> None:
+        if self._dragging_marker is not None:
+            if ev.inaxes is not self._ax or ev.xdata is None:
+                return  # hold position while the cursor is off-axes
+            vmin, vmax = self._clim
+            # Keep a strict vmin < vmax so imshow's normalization stays valid.
+            eps = (self._edges[-1] - self._edges[0]) * 1e-6 or np.finfo(float).eps
+            if self._dragging_marker == 0:
+                vmin = min(float(ev.xdata), vmax - eps)
+            else:
+                vmax = max(float(ev.xdata), vmin + eps)
+            self._clim = (vmin, vmax)
+            # Move the artists in place — no remove/recreate churn mid-drag.
+            self._vline_lo.set_xdata([vmin, vmin])
+            self._vtext_lo.set_x(vmin)
+            self._vline_hi.set_xdata([vmax, vmax])
+            self._vtext_hi.set_x(vmax)
+            self.draw_idle()
+            self._on_clim_dragged(vmin, vmax)
+            self.setCursor(Qt.CursorShape.SizeHorCursor)
+            self._on_status(f"clim  vmin {vmin:.4g}  vmax {vmax:.4g}")
+            return
         if ev.inaxes is not self._ax or self._edges is None or ev.xdata is None:
             return
+        if self._marker_hit(ev) is not None:
+            self.setCursor(Qt.CursorShape.SizeHorCursor)
+            self._on_status("Drag to adjust the image vmin/vmax")
+            return
+        self.unsetCursor()
         idx = min(int(np.searchsorted(self._edges[1:], ev.xdata)), len(self._counts) - 1)
         lo, hi = self._edges[idx], self._edges[idx + 1]
         self._on_status(f"bin [{lo:.4g}, {hi:.4g})  count: {self._counts[idx]}")
 
+    def _on_release(self, ev) -> None:
+        if ev.button == 1:
+            self._dragging_marker = None
+            self.unsetCursor()
+
     def _on_axes_leave(self, ev) -> None:
+        self.unsetCursor()
         self._on_status(self._idle_status)
 
     def _on_scroll(self, ev) -> None:
@@ -270,12 +324,10 @@ class HistogramView(BaseView):
         self._stats_label = QLabel()
         self._stats_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
 
-        self._sample_label = QLabel()
-        self._sample_label.setStyleSheet("color: #b8860b;")
+        self._sample_label = CautionLabel()
         self._sample_label.setVisible(False)
 
-        self._anomaly_label = QLabel()
-        self._anomaly_label.setStyleSheet("color: red;")
+        self._anomaly_label = ErrorLabel()
         self._anomaly_label.setVisible(False)
 
         ctrl = QWidget()
@@ -369,6 +421,9 @@ class HistogramView(BaseView):
 
     def update_clim_marker(self, vmin: float | None, vmax: float | None) -> None:
         self._canvas.update_clim_marker(vmin, vmax)
+
+    def set_on_clim_dragged(self, cb: Callable) -> None:
+        self._canvas.set_on_clim_dragged(cb)
 
     def refresh_status(self) -> None:
         self._on_status(self._status)

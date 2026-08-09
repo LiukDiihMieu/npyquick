@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
 
 from ..core import limits
 from ..core.stats import ArrayStats, array_stats
-from .base import BaseView
+from .base import BaseView, CautionLabel
 
 
 def _too_large_to_tabulate_message(array: np.ndarray) -> str:
@@ -137,8 +137,7 @@ class RawTableView(BaseView):
         self._stack.addWidget(self._message_label)  # index 2
 
         self._info = QLabel()
-        self._trunc_label = QLabel()
-        self._trunc_label.setStyleSheet("color: #b8860b;")
+        self._trunc_label = CautionLabel()
         self._trunc_label.setVisible(False)
         info_row = QHBoxLayout()
         info_row.setContentsMargins(0, 0, 0, 0)

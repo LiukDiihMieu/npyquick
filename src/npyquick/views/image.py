@@ -17,7 +17,10 @@ from ..core import complexproj, limits
 from ..core.coord import PixelTransform
 from ..core.profile import compute_profile
 from ..core.stats import ArrayStats, array_stats, is_real_numeric
-from .base import BaseView, ColormappedView, ExportableMixin, SpatialView
+from .base import (
+    BaseView, CautionLabel, ColormappedView, ErrorLabel, ExportableMixin,
+    SpatialView,
+)
 
 
 class ProfileCanvas(ExportableMixin, FigureCanvas):
@@ -566,13 +569,11 @@ class ImageView(BaseView, SpatialView, ColormappedView):
         self._clim_prefix_label = QLabel()
         self._clim_prefix_label.setVisible(False)
 
-        self._downsample_label = QLabel()
-        self._downsample_label.setStyleSheet("color: #b8860b;")
+        self._downsample_label = CautionLabel()
         self._downsample_label.setVisible(False)
         self._norm_label = QLabel()
         self._norm_label.setVisible(False)
-        self._anomaly_label = QLabel()
-        self._anomaly_label.setStyleSheet("color: red;")
+        self._anomaly_label = ErrorLabel()
         self._anomaly_label.setVisible(False)
 
         ctrl = QWidget()
@@ -691,6 +692,16 @@ class ImageView(BaseView, SpatialView, ColormappedView):
         if self._complex or self._canvas._im is None or self._canvas._rgb:
             return None, None
         return self._canvas._im.get_clim()
+
+    def set_clim_from_histogram(self, vmin: float, vmax: float) -> None:
+        # Silent sink (like ImageCanvas.set_view/set_endpoints): apply a clim
+        # dragged on the histogram without firing _on_clim_change back — the
+        # histogram's marker artists are already in place.
+        if self._complex or self._canvas._rgb or self._canvas._im is None:
+            return  # defensive; no markers exist in these modes anyway
+        self._canvas.set_clim(vmin, vmax)
+        self._vmin_edit.setText(f"{vmin:.4g}")
+        self._vmax_edit.setText(f"{vmax:.4g}")
 
     def _apply_clim(self) -> None:
         try:

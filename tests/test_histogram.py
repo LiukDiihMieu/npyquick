@@ -1,6 +1,7 @@
 """Tests for HistogramView and HistogramCanvas."""
 from __future__ import annotations
 
+import types
 import warnings
 
 import numpy as np
@@ -338,3 +339,105 @@ def test_histogram_complex_projection_only_sees_sampled_data(monkeypatch):
     view = HistogramView()
     view.set_data(_complex_grid())  # 64 elements, budget 16 → must sample down
     assert seen["size"] <= 16, "projection must run on the sampled subset only"
+
+
+# ---------------------------------------------------------------------------
+# Draggable clim markers. Fake mpl events via SimpleNamespace, the same style
+# as test_image_canvas_hooks.py; draw() first so transData is valid.
+# ---------------------------------------------------------------------------
+
+def _marker_canvas(vmin=2.0, vmax=8.0):
+    """A rendered canvas with clim markers on a [0, 10] uniform histogram."""
+    c = HistogramCanvas()
+    c.set_clim_marker(vmin, vmax)
+    c.plot(np.linspace(0.0, 10.0, 1000))
+    c.draw()
+    return c
+
+
+def _ev_at(c, x_data, **kw):
+    px = c._ax.transData.transform((x_data, 0.0))[0]
+    return types.SimpleNamespace(
+        inaxes=c._ax, x=px, xdata=x_data, button=1, dblclick=False, **kw
+    )
+
+
+def test_press_on_marker_starts_drag(qapp):
+    c = _marker_canvas()
+    c._on_press(_ev_at(c, 2.0))
+    assert c._dragging_marker == 0
+    c._on_release(types.SimpleNamespace(button=1))
+    c._on_press(_ev_at(c, 8.0))
+    assert c._dragging_marker == 1
+
+
+def test_press_far_from_markers_does_not_drag(qapp):
+    c = _marker_canvas()
+    c._on_press(_ev_at(c, 5.0))
+    assert c._dragging_marker is None
+
+
+def test_press_without_markers_does_not_drag(qapp):
+    c = HistogramCanvas()
+    c.plot(np.linspace(0.0, 10.0, 100))  # no clim set -> no markers
+    c.draw()
+    c._on_press(_ev_at(c, 5.0))
+    assert c._dragging_marker is None
+
+
+def test_drag_updates_clim_and_fires_callback(qapp):
+    c = _marker_canvas()
+    fired = []
+    c.set_on_clim_dragged(lambda vmin, vmax: fired.append((vmin, vmax)))
+    c._on_press(_ev_at(c, 2.0))
+    c._on_motion(_ev_at(c, 3.5))
+    assert fired and fired[-1][0] == pytest.approx(3.5)
+    assert c._clim[0] == pytest.approx(3.5)
+    assert c._vline_lo.get_xdata()[0] == pytest.approx(3.5)
+
+
+def test_vmin_cannot_cross_vmax(qapp):
+    c = _marker_canvas(vmin=2.0, vmax=4.0)
+    c._on_press(_ev_at(c, 2.0))
+    c._on_motion(_ev_at(c, 9.0))  # try to drag vmin far past vmax
+    vmin, vmax = c._clim
+    assert vmin < vmax
+    assert vmax == pytest.approx(4.0)
+
+
+def test_release_ends_drag(qapp):
+    c = _marker_canvas()
+    c._on_press(_ev_at(c, 2.0))
+    c._on_release(types.SimpleNamespace(button=1))
+    assert c._dragging_marker is None
+
+
+def test_double_click_resets_xlim_without_starting_drag(qapp):
+    c = _marker_canvas()
+    ev = _ev_at(c, 2.0)
+    ev.dblclick = True
+    c._on_press(ev)
+    assert c._dragging_marker is None
+
+
+def test_marker_drag_drives_image_clim_and_edits(main_window, write_npy):
+    """Integration: histogram drag -> image clim + vmin/vmax edits, no echo."""
+    path = write_npy(np.linspace(0.0, 10.0, 64).reshape(8, 8).astype(np.float64))
+    main_window.load_file(path)
+
+    hcanvas = main_window._histogram_view._canvas
+    hcanvas.draw()
+    line_before = hcanvas._vline_lo
+    assert line_before is not None, "2D grayscale image must show clim markers"
+
+    hcanvas._on_press(_ev_at(hcanvas, hcanvas._clim[0]))
+    assert hcanvas._dragging_marker == 0
+    hcanvas._on_motion(_ev_at(hcanvas, 4.0))
+    hcanvas._on_release(types.SimpleNamespace(button=1))
+
+    vmin, vmax = main_window._image_view._canvas._im.get_clim()
+    assert vmin == pytest.approx(4.0)
+    assert main_window._image_view._vmin_edit.text() == f"{vmin:.4g}"
+    assert main_window._image_view._vmax_edit.text() == f"{vmax:.4g}"
+    # No echo: the image side must not have recreated the histogram markers.
+    assert hcanvas._vline_lo is line_before

@@ -16,6 +16,8 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from .base import ErrorLabel
+
 UNITS = ["px", "nm", "μm", "mm", "cm", "m", "km", "in", "ft", "yd", "mi", "None"]
 
 _SETTINGS_KEY = "pixel_size_history"
@@ -100,8 +102,7 @@ class PixelSizeDialog(QDialog):
         self._unit_combo = QComboBox()
         self._unit_combo.addItems(UNITS)
 
-        self._error_label = QLabel()
-        self._error_label.setStyleSheet("color: red;")
+        self._error_label = ErrorLabel()
         self._error_label.hide()
 
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
