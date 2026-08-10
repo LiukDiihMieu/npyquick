@@ -7,8 +7,12 @@ shapes, client config), not framework-agnostic array logic."""
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
+
 import plotly.graph_objects as go
 from nicegui import ui
+from nicegui.element import Element
 
 # Endpoint-equality tolerance used by both views to distinguish genuine drag
 # input from the echo of their own corrective relayout call — each pushes a
@@ -18,6 +22,29 @@ from nicegui import ui
 # "this reported position already matches what we just set" as a no-op, that
 # echo looks like new input and the correction re-fires forever.
 POS_TOL = 1e-6
+
+
+@contextmanager
+def control_group(title: str) -> Iterator[Element]:
+    """A small bordered cluster of controls with an uppercase caption above
+    it — e.g. "Display" / "Range" — so a view's toolbar reads as a few
+    labeled instrument groups (like a scientific tool's property inspector)
+    instead of one long, visually undifferentiated row of selects/buttons.
+
+    Yields the OUTER container (caption + bordered box together), not the
+    inner box — callers that need to hide an entire group at once (e.g.
+    ImageView hiding "Display"/"Range" outright in RGB mode, where every
+    control inside would otherwise be individually hidden and leave an
+    empty box) should call `.set_visibility()` on this returned element,
+    not on the individual controls placed inside it."""
+    with ui.column().classes("gap-1") as group:
+        ui.label(title.upper()).classes(
+            "text-[10px] tracking-wide text-gray-500 dark:text-gray-400 font-medium px-1"
+        )
+        with ui.row().classes(
+            "items-center gap-2 rounded-borders border px-3 py-1.5 border-gray-300 dark:border-gray-600"
+        ):
+            yield group
 
 
 def plotly_template(dark: bool) -> str:

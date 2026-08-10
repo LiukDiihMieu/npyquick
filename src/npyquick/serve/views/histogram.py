@@ -24,6 +24,7 @@ from npyquick.core import complexproj, limits
 from npyquick.core.stats import ArrayStats, array_stats, is_real_numeric
 from npyquick.serve.views._shared import (
     POS_TOL,
+    control_group,
     empty_plotly_figure,
     measure_viewport_height,
     plotly_template,
@@ -33,6 +34,11 @@ from npyquick.serve.views._shared import (
 
 _BIN_OPTIONS = ["auto", "64", "128", "256", "512"]
 _MARKER_COLOR = "tomato"
+# Display order for the stats readout grid (_update_stats_label) — a plain
+# 7-value string ("min 1  max 1  mean 1  std 4.08e-08  |  p1 1  p50 1  p99 1")
+# was hard to scan since nothing lined values up; a two-row grid (captions
+# over values, monospace) reads more like an instrument readout.
+_STAT_KEYS = ["min", "max", "mean", "std", "p1", "p50", "p99"]
 
 
 def _finite_sample(array: np.ndarray) -> tuple[np.ndarray, int, int]:
@@ -155,19 +161,33 @@ class HistogramView:
         # (app.py), which already supplies that visual identity via the tab
         # bar — an unsupported dtype now DISABLES that tab instead of
         # needing this view to hide itself (see app.py's refresh_views).
-        with ui.row().classes("items-center gap-2") as self.controls:
-            self.bins_select = ui.select(_BIN_OPTIONS, value="auto", label="Bins").props("dense")
-            self.log_checkbox = ui.checkbox("Log scale").props("dense")
-            # min-width: same floating-label-clips-to-value-width issue as
-            # the Image view's Colormap select — see that file's comment.
-            self.component_select = ui.select(
-                complexproj.component_names(), value=self.state.component, label="Component",
-            ).classes("min-w-[8rem]").props("dense")
-            self.full_btn = ui.button("Full").props("dense")
-            self.robust_btn = ui.button("Robust").props("dense").tooltip("Set x-range to p2–p98")
+        # Two labeled instrument groups ("Display"/"Range"), same pattern as
+        # ImageView's toolbar — see _shared.control_group's docstring.
+        with ui.row().classes("items-start gap-4") as self.controls:
+            with control_group("Display"):
+                self.bins_select = ui.select(_BIN_OPTIONS, value="auto", label="Bins").props("dense")
+                self.log_checkbox = ui.checkbox("Log scale").props("dense")
+                # min-width: same floating-label-clips-to-value-width issue as
+                # the Image view's Colormap select — see that file's comment.
+                self.component_select = ui.select(
+                    complexproj.component_names(), value=self.state.component, label="Component",
+                ).classes("min-w-[8rem]").props("dense")
+            with control_group("Range"):
+                self.full_btn = ui.button("Full").props("dense")
+                self.robust_btn = ui.button("Robust").props("dense").tooltip("Set x-range to p2–p98")
         self.component_select.set_visibility(False)
 
-        self.stats_label = ui.label()
+        # Captions row over a monospace values row, both fixed to
+        # content-width columns (not equal 1fr shares) so a short "1" and a
+        # long "4.08e-08" don't force every OTHER column to that same width.
+        with ui.grid(columns=len(_STAT_KEYS)).classes("gap-x-5 gap-y-0.5 items-baseline w-fit").style(
+            f"grid-template-columns: repeat({len(_STAT_KEYS)}, max-content)"
+        ) as self.stats_grid:
+            for key in _STAT_KEYS:
+                ui.label(key).classes("text-[10px] uppercase tracking-wide text-gray-500 dark:text-gray-400")
+            self.stat_value_labels = {key: ui.label("—").classes("font-mono text-sm") for key in _STAT_KEYS}
+        self.stats_empty_label = ui.label("no finite values").classes("text-sm text-gray-500")
+        self.stats_empty_label.set_visibility(False)
         self.sample_label = ui.label().classes("text-amber-600")
         self.sample_label.set_visibility(False)
         self.anomaly_label = ui.label().classes("text-red-500")
@@ -213,7 +233,8 @@ class HistogramView:
             self._full_render()
 
     def set_data(self, array: np.ndarray, stats: ArrayStats | None = None) -> str | None:
-        self.stats_label.text = ""
+        self.stats_grid.set_visibility(False)
+        self.stats_empty_label.set_visibility(False)
         self.sample_label.set_visibility(False)
         self.anomaly_label.set_visibility(False)
         is_complex = np.issubdtype(array.dtype, np.complexfloating)
@@ -272,13 +293,14 @@ class HistogramView:
             fmin, fmax = float(finite.min()), float(finite.max())
             mean, std = float(np.mean(finite)), float(np.std(finite))
             p1, p50, p99 = (float(v) for v in np.percentile(finite, [1, 50, 99]))
-            text = (
-                f"min {fmin:.4g}  max {fmax:.4g}  mean {mean:.4g}  std {std:.4g}"
-                f"  |  p1 {p1:.4g}  p50 {p50:.4g}  p99 {p99:.4g}"
-            )
+            values = {"min": fmin, "max": fmax, "mean": mean, "std": std, "p1": p1, "p50": p50, "p99": p99}
+            for key, val in values.items():
+                self.stat_value_labels[key].text = f"{val:.4g}"
+            self.stats_grid.set_visibility(True)
+            self.stats_empty_label.set_visibility(False)
         else:
-            text = "no finite values"
-        self.stats_label.text = text
+            self.stats_grid.set_visibility(False)
+            self.stats_empty_label.set_visibility(True)
 
         sampled = state.n_used < state.n_total
         if sampled:

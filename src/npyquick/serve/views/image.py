@@ -27,6 +27,7 @@ from npyquick.core.stats import ArrayStats, array_stats, is_real_numeric
 from npyquick.serve import colormaps
 from npyquick.serve.views._shared import (
     POS_TOL,
+    control_group,
     empty_plotly_figure,
     measure_viewport_height,
     plotly_template,
@@ -240,7 +241,7 @@ def _active_display(state: ImageState) -> np.ndarray:
 
 def _profile_figure(
     distances: np.ndarray, values: np.ndarray, ylabel: str, unit: str, dark: bool, height: int,
-) -> go.Figure:
+) -> dict:
     # compute_profile returns (N,) for grayscale/complex-component data but
     # (C, N) for RGB — go.Scatter silently accepts a 2D `y` without error and
     # renders garbage, so this must split it into per-channel traces instead
@@ -265,7 +266,15 @@ def _profile_figure(
         template=plotly_template(dark),
         height=height,  # see _axis_layout's comment above
     )
-    return fig
+    # Not with_plotly_config(): that config is for the draggable-shape plots
+    # (Image/Histogram) and carries edits.shapePosition, which this plot has
+    # no use for (no shapes here). Same minimal config lineplot.py builds
+    # inline for the same reason — responsive off (see with_plotly_config's
+    # docstring for why every plot in this app needs that), logo off to
+    # match every other plot.
+    d = fig.to_plotly_json()
+    d["config"] = {"responsive": False, "displaylogo": False}
+    return d
 
 
 class ImageView:
@@ -278,26 +287,35 @@ class ImageView:
         # (app.py), which already supplies that visual identity via the tab
         # bar — an unsupported shape/dtype now DISABLES that tab instead of
         # needing this view to hide itself (see app.py's refresh_views).
-        with ui.row().classes("items-center gap-2") as self.controls:
-            # min-width: ui.select otherwise sizes to the current VALUE's
-            # text ("Gray"), not the (longer) floating LABEL above it,
-            # which clips the label to "Col...".
-            self.colormap_select = ui.select(
-                {name: label for name, label in colormaps.COLORMAPS}, value=self.state.colormap_base,
-                label="Colormap",
-            ).classes("min-w-[9rem]").props("dense")
-            self.reverse_checkbox = ui.checkbox("Reverse").props("dense")
-            self.pair_select = ui.select(
-                list(complexproj.IMAGE_PAIRS), value=self.state.pair, label="Pair",
-            ).props("dense")
-            # Names which component's vmin/vmax the edit boxes show/apply to
-            # in complex mode (e.g. "Real") — otherwise it's only inferable
-            # from which panel you last clicked.
-            self.clim_prefix_label = ui.label().classes("text-sm text-gray-500")
-            self.vmin_input = ui.number("vmin", format="%.4g").props("dense")
-            self.vmax_input = ui.number("vmax", format="%.4g").props("dense")
-            self.apply_btn = ui.button("Apply").props("dense")
-            self.reset_btn = ui.button("Reset").props("dense")
+        # Two labeled instrument groups ("Display"/"Range") rather than one
+        # flat row — see _shared.control_group's docstring. Both groups
+        # (not just the individual controls inside them) get hidden
+        # outright in RGB mode (see _sync_controls): RGB is shown as raw
+        # R/G/B values, so neither a colormap nor a value range applies,
+        # and a bordered box with nothing visible inside it would just be
+        # empty dead space.
+        with ui.row().classes("items-start gap-4") as self.controls:
+            with control_group("Display") as self._display_group:
+                # min-width: ui.select otherwise sizes to the current VALUE's
+                # text ("Gray"), not the (longer) floating LABEL above it,
+                # which clips the label to "Col...".
+                self.colormap_select = ui.select(
+                    {name: label for name, label in colormaps.COLORMAPS}, value=self.state.colormap_base,
+                    label="Colormap",
+                ).classes("min-w-[9rem]").props("dense")
+                self.reverse_checkbox = ui.checkbox("Reverse").props("dense")
+                self.pair_select = ui.select(
+                    list(complexproj.IMAGE_PAIRS), value=self.state.pair, label="Pair",
+                ).props("dense")
+                # Names which component's vmin/vmax the edit boxes show/apply
+                # to in complex mode (e.g. "Real") — otherwise it's only
+                # inferable from which panel you last clicked.
+                self.clim_prefix_label = ui.label().classes("text-sm text-gray-500")
+            with control_group("Range") as self._range_group:
+                self.vmin_input = ui.number("vmin", format="%.4g").props("dense")
+                self.vmax_input = ui.number("vmax", format="%.4g").props("dense")
+                self.apply_btn = ui.button("Apply").props("dense")
+                self.reset_btn = ui.button("Reset").props("dense")
         self.clim_prefix_label.set_visibility(False)
 
         with ui.row().classes("items-center gap-3") as self.status_row:
@@ -580,8 +598,16 @@ class ImageView:
         if state.mode == "complex":
             a, b = complexproj.IMAGE_PAIRS[state.pair]
             self.clim_prefix_label.text = a if state.active_panel == 0 else b
-        for w in (self.vmin_input, self.vmax_input, self.apply_btn, self.reset_btn):
-            w.set_visibility(state.mode != "rgb")
+        # RGB is displayed as-is (actual R/G/B pixel values, not a scalar
+        # mapped through a colorscale) — colormap/reverse/vmin/vmax all have
+        # nothing to act on in that mode, same as the desktop's ImageView
+        # disabling its own clim controls for RGB. Hides the whole "Display"/
+        # "Range" GROUP, not just the individual controls inside it — both
+        # groups are empty in RGB mode (Pair/clim_prefix_label are already
+        # separately hidden outside complex mode), and an empty bordered box
+        # would just be dead space.
+        self._display_group.set_visibility(state.mode != "rgb")
+        self._range_group.set_visibility(state.mode != "rgb")
         vmin, vmax = self.get_clim()
         self.vmin_input.value = vmin
         self.vmax_input.value = vmax

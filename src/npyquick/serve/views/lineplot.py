@@ -30,6 +30,7 @@ from nicegui import ui
 from npyquick.core import limits
 from npyquick.core.stats import ArrayStats, array_stats, is_real_numeric
 from npyquick.serve.views._shared import (
+    control_group,
     empty_plotly_figure,
     measure_viewport_height,
     plotly_template,
@@ -96,10 +97,16 @@ class LineplotView:
         # (app.py), which already supplies that visual identity via the tab
         # bar — an unsupported dtype/shape now DISABLES that tab instead of
         # needing this view to hide itself (see app.py's refresh_views).
-        with ui.row().classes("items-center gap-2") as self.controls:
-            self.log_x_checkbox = ui.checkbox("Log X").props("dense")
-            self.log_y_checkbox = ui.checkbox("Log Y").props("dense")
-            self.reset_btn = ui.button("Reset").props("dense")
+        # One labeled instrument group ("Axes") — same pattern as ImageView's
+        # and HistogramView's toolbars, see _shared.control_group's
+        # docstring. Only one group here (not a "Display"/"Range" split like
+        # those two): there's no second logical cluster of controls to
+        # separate it from.
+        with ui.row().classes("items-start gap-4") as self.controls:
+            with control_group("Axes"):
+                self.log_x_checkbox = ui.checkbox("Log X").props("dense")
+                self.log_y_checkbox = ui.checkbox("Log Y").props("dense")
+                self.reset_btn = ui.button("Reset").props("dense")
 
         self.stats_label = ui.label()
         self.sample_label = ui.label().classes("text-amber-600")

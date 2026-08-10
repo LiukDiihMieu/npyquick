@@ -104,7 +104,7 @@ class TableView:
         # below match the desktop QTableView's
         # setDefaultSectionSize(90)/(70) instead.
         self.single_grid = ui.aggrid(
-            {"columnDefs": [], "rowData": [], "defaultColDef": {"width": 90}},
+            {"columnDefs": [], "rowData": [], "defaultColDef": {"width": 90}, "suppressMovableColumns": True},
             auto_size_columns=False,
         ).classes("w-full").style("height: 500px")
         self.single_grid.set_visibility(False)
@@ -115,7 +115,7 @@ class TableView:
                 with ui.column().classes("flex-1 gap-1"):
                     ui.label(label).classes("font-bold")
                     grid = ui.aggrid(
-                        {"columnDefs": [], "rowData": [], "defaultColDef": {"width": 70}},
+                        {"columnDefs": [], "rowData": [], "defaultColDef": {"width": 70}, "suppressMovableColumns": True},
                         auto_size_columns=False,
                     ).style("height: 500px")
                     self.rgb_grids.append(grid)

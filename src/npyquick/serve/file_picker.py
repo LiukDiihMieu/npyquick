@@ -25,6 +25,15 @@ class FilePicker(ui.dialog):
         self._current_dir = Path(start_dir).resolve()
         if not self._current_dir.is_dir():
             self._current_dir = self._current_dir.parent
+        # Wherever browsing STARTS also serves as the upper bound on where it
+        # can go — that's already the file's own directory when one was given
+        # on the command line, or the process's cwd otherwise (see cli.py).
+        # No separate "root" concept/flag: exposing this dialog to a whole
+        # filesystem via ".." was a real gap (this app can be pointed at a
+        # non-loopback --host), and defining the boundary as "whatever this
+        # instance was already anchored to" closes it with no new parameter
+        # and no case where the boundary and the starting point disagree.
+        self._root_dir = self._current_dir
 
         with self, ui.card().classes("w-full max-w-2xl"):
             self.path_label = ui.label().classes("text-sm text-gray-500")
@@ -65,7 +74,7 @@ class FilePicker(ui.dialog):
         )
 
         rows = []
-        if self._current_dir.parent != self._current_dir:
+        if self._current_dir != self._root_dir:
             rows.append({"name": "⬆ <strong>..</strong>", "path": str(self._current_dir.parent)})
         rows += [{"name": f"📁 <strong>{d.name}</strong>", "path": str(d)} for d in dirs]
         rows += [{"name": f"📄 {f.name}", "path": str(f)} for f in files]
