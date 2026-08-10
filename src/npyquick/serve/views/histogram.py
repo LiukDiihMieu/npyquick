@@ -22,7 +22,14 @@ from nicegui import ui
 
 from npyquick.core import complexproj, limits
 from npyquick.core.stats import ArrayStats, array_stats, is_real_numeric
-from npyquick.serve.views._shared import POS_TOL, empty_plotly_figure, shape_touched, with_plotly_config
+from npyquick.serve.views._shared import (
+    POS_TOL,
+    empty_plotly_figure,
+    measure_viewport_height,
+    plotly_template,
+    shape_touched,
+    with_plotly_config,
+)
 
 _BIN_OPTIONS = ["auto", "64", "128", "256", "512"]
 _MARKER_COLOR = "tomato"
@@ -54,6 +61,12 @@ class HistogramState:
         self.edges: np.ndarray | None = None
         self.counts: np.ndarray | None = None
         self.clim: tuple[float, float] | None = None
+        self.dark: bool = False
+        # Fallback until the first resize() measures the real viewport (see
+        # measure_viewport_height's docstring in _shared.py for why this is
+        # baked into the figure's own layout.height rather than fought over
+        # via CSS).
+        self.plot_height: int = 350
 
 
 def _compute_histogram(finite: np.ndarray, n_bins: str | int) -> tuple[np.ndarray, np.ndarray]:
@@ -127,6 +140,8 @@ def _histogram_figure(state: HistogramState) -> dict:
         dragmode="pan",
         showlegend=False,
         margin={"l": 50, "r": 20, "t": 20, "b": 40},
+        template=plotly_template(state.dark),
+        height=state.plot_height,  # see measure_viewport_height's docstring
     )
     return with_plotly_config(fig)
 
@@ -136,17 +151,20 @@ class HistogramView:
         self.state = HistogramState()
         self._on_clim_dragged: Callable[[float, float], None] = lambda vmin, vmax: None
 
+        # No card/title wrapper: this view now lives in its own ui.tab_panel
+        # (app.py), which already supplies that visual identity via the tab
+        # bar — an unsupported dtype now DISABLES that tab instead of
+        # needing this view to hide itself (see app.py's refresh_views).
         with ui.row().classes("items-center gap-2") as self.controls:
-            self.bins_select = ui.select(_BIN_OPTIONS, value="auto", label="Bins")
-            self.log_checkbox = ui.checkbox("Log scale")
+            self.bins_select = ui.select(_BIN_OPTIONS, value="auto", label="Bins").props("dense")
+            self.log_checkbox = ui.checkbox("Log scale").props("dense")
             # min-width: same floating-label-clips-to-value-width issue as
             # the Image view's Colormap select — see that file's comment.
             self.component_select = ui.select(
                 complexproj.component_names(), value=self.state.component, label="Component",
-            ).classes("min-w-[8rem]")
-            self.full_btn = ui.button("Full")
-            self.robust_btn = ui.button("Robust").tooltip("Set x-range to p2–p98")
-        self.controls.set_visibility(False)
+            ).classes("min-w-[8rem]").props("dense")
+            self.full_btn = ui.button("Full").props("dense")
+            self.robust_btn = ui.button("Robust").props("dense").tooltip("Set x-range to p2–p98")
         self.component_select.set_visibility(False)
 
         self.stats_label = ui.label()
@@ -156,11 +174,6 @@ class HistogramView:
         self.anomaly_label.set_visibility(False)
 
         self.hist_plot = ui.plotly(empty_plotly_figure()).classes("w-full").style("height: 350px")
-        # Hidden until the first successful set_data — see the matching
-        # comment in serve/views/image.py for why (no tabbed navigation yet,
-        # so a visible-but-empty plot for an unsupported dtype/shape reads
-        # as "stuck" rather than "not applicable").
-        self.hist_plot.set_visibility(False)
 
         self.bins_select.on_value_change(self._apply_bins)
         self.log_checkbox.on_value_change(self._apply_log)
@@ -176,17 +189,33 @@ class HistogramView:
     def set_on_clim_dragged(self, cb: Callable[[float, float], None]) -> None:
         self._on_clim_dragged = cb
 
-    def hide(self) -> None:
-        """See ImageView.hide's docstring for why this exists and who calls it."""
-        self.controls.set_visibility(False)
-        self.component_select.set_visibility(False)
-        self.hist_plot.set_visibility(False)
+    async def resize(self) -> None:
+        """Measure the current viewport and store it (see
+        _shared.measure_viewport_height's docstring — this is what lets a
+        typical window show the whole plot without scrolling), then
+        re-render. The re-render itself is for a separate reason: see
+        ImageView.resize's docstring for the tab-activation staleness race
+        this also has to guard against — same conclusion applies here, just
+        re-render from scratch (what a fresh load already does correctly)
+        rather than trying to nudge Plotly into re-measuring after the
+        fact."""
+        if self.state.array is not None:
+            self.state.plot_height = await measure_viewport_height(self.hist_plot)
+            self.hist_plot.style(f"height: {self.state.plot_height}px")
+            self._full_render()
+
+    def set_dark(self, is_dark: bool) -> None:
+        """See ImageView.set_dark's docstring — same idea, Plotly's template
+        needs an explicit nudge that Quasar's own dark-mode switch doesn't
+        give it for free."""
+        self.state.dark = is_dark
+        if self.state.array is not None:
+            self._full_render()
+
+    def set_data(self, array: np.ndarray, stats: ArrayStats | None = None) -> str | None:
         self.stats_label.text = ""
         self.sample_label.set_visibility(False)
         self.anomaly_label.set_visibility(False)
-
-    def set_data(self, array: np.ndarray, stats: ArrayStats | None = None) -> str | None:
-        self.hide()
         is_complex = np.issubdtype(array.dtype, np.complexfloating)
         if not (is_real_numeric(array) or is_complex) or array.size == 0:
             return f"Histogram doesn't support dtype {array.dtype} (or an empty array)."
@@ -204,8 +233,6 @@ class HistogramView:
             state.finite = finite
 
         self.component_select.set_visibility(is_complex)
-        self.controls.set_visibility(True)
-        self.hist_plot.set_visibility(True)
         self._full_render()
 
         if stats is None:

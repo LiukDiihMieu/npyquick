@@ -29,7 +29,11 @@ from nicegui import ui
 
 from npyquick.core import limits
 from npyquick.core.stats import ArrayStats, array_stats, is_real_numeric
-from npyquick.serve.views._shared import empty_plotly_figure
+from npyquick.serve.views._shared import (
+    empty_plotly_figure,
+    measure_viewport_height,
+    plotly_template,
+)
 
 
 class LineplotState:
@@ -43,6 +47,12 @@ class LineplotState:
         self.n_used: int = 0
         self.log_x: bool = False
         self.log_y: bool = False
+        self.dark: bool = False
+        # Fallback until the first resize() measures the real viewport (see
+        # measure_viewport_height's docstring in _shared.py for why this is
+        # baked into the figure's own layout.height rather than fought over
+        # via CSS).
+        self.plot_height: int = 400
 
 
 def _lineplot_figure(state: LineplotState) -> dict:
@@ -63,15 +73,18 @@ def _lineplot_figure(state: LineplotState) -> dict:
         dragmode="pan",
         showlegend=False,
         margin={"l": 50, "r": 20, "t": 20, "b": 40},
+        template=plotly_template(state.dark),
+        height=state.plot_height,  # see measure_viewport_height's docstring
     )
     d = fig.to_plotly_json()
     # scrollZoom deliberately off: the shift-for-y-axis wheel handler wired in
     # LineplotView.__init__ replaces it entirely, so Plotly's own wheel-zoom
     # would otherwise double-handle the same event. responsive=False: see the
     # matching comment in serve/views/_shared.py's with_plotly_config — this
-    # view is also hidden/shown via set_data()/hide(), so it's equally
-    # exposed to NiceGUI's crash-prone auto-resize-on-any-DOM-change behavior.
-    d["config"] = {"scrollZoom": False, "responsive": False}
+    # view's tab can be hidden/disabled at the app level, which this plot is
+    # equally exposed to NiceGUI's crash-prone auto-resize-on-any-DOM-change
+    # behavior for.
+    d["config"] = {"scrollZoom": False, "responsive": False, "displaylogo": False}
     return d
 
 
@@ -79,11 +92,14 @@ class LineplotView:
     def __init__(self) -> None:
         self.state = LineplotState()
 
+        # No card/title wrapper: this view now lives in its own ui.tab_panel
+        # (app.py), which already supplies that visual identity via the tab
+        # bar — an unsupported dtype/shape now DISABLES that tab instead of
+        # needing this view to hide itself (see app.py's refresh_views).
         with ui.row().classes("items-center gap-2") as self.controls:
-            self.log_x_checkbox = ui.checkbox("Log X")
-            self.log_y_checkbox = ui.checkbox("Log Y")
-            self.reset_btn = ui.button("Reset")
-        self.controls.set_visibility(False)
+            self.log_x_checkbox = ui.checkbox("Log X").props("dense")
+            self.log_y_checkbox = ui.checkbox("Log Y").props("dense")
+            self.reset_btn = ui.button("Reset").props("dense")
 
         self.stats_label = ui.label()
         self.sample_label = ui.label().classes("text-amber-600")
@@ -92,11 +108,6 @@ class LineplotView:
         self.anomaly_label.set_visibility(False)
 
         self.line_plot = ui.plotly(empty_plotly_figure()).classes("w-full").style("height: 400px")
-        # Hidden until the first successful set_data — see the matching
-        # comment in serve/views/image.py for why (no tabbed navigation yet,
-        # so a visible-but-empty plot for an unsupported dtype/shape reads
-        # as "stuck" rather than "not applicable").
-        self.line_plot.set_visibility(False)
 
         self.log_x_checkbox.on_value_change(self._apply_log_x)
         self.log_y_checkbox.on_value_change(self._apply_log_y)
@@ -137,16 +148,37 @@ class LineplotView:
     # Public interface
     # ------------------------------------------------------------------
 
-    def hide(self) -> None:
-        """See ImageView.hide's docstring for why this exists and who calls it."""
-        self.controls.set_visibility(False)
-        self.line_plot.set_visibility(False)
+    async def resize(self) -> None:
+        """Measure the current viewport and store it (see
+        _shared.measure_viewport_height's docstring — this is what lets a
+        typical window show the whole plot without scrolling), then
+        re-render. The re-render itself is for a separate reason: see
+        ImageView.resize's docstring for the tab-activation staleness race
+        this also has to guard against — same conclusion applies here, just
+        re-render from scratch (what a fresh load already does correctly)
+        rather than trying to nudge Plotly into re-measuring after the
+        fact."""
+        if self.state.x_disp is not None:
+            self.state.plot_height = await measure_viewport_height(self.line_plot)
+            self.line_plot.style(f"height: {self.state.plot_height}px")
+            self._full_render()
+
+    def set_dark(self, is_dark: bool) -> None:
+        """See ImageView.set_dark's docstring — same idea, Plotly's template
+        needs an explicit nudge that Quasar's own dark-mode switch doesn't
+        give it for free."""
+        self.state.dark = is_dark
+        if self.state.x_disp is not None:
+            self._full_render()
+
+    def _full_render(self) -> None:
+        self.line_plot.figure = _lineplot_figure(self.state)
+        self.line_plot.update()
+
+    def set_data(self, array: np.ndarray, stats: ArrayStats | None = None) -> str | None:
         self.stats_label.text = ""
         self.sample_label.set_visibility(False)
         self.anomaly_label.set_visibility(False)
-
-    def set_data(self, array: np.ndarray, stats: ArrayStats | None = None) -> str | None:
-        self.hide()
         if not is_real_numeric(array):
             return f"Line Plot doesn't support dtype {array.dtype}."
 
@@ -197,10 +229,7 @@ class LineplotView:
             state.log_y = False
             self.log_y_checkbox.value = False
 
-        self.controls.set_visibility(True)
-        self.line_plot.set_visibility(True)
-        self.line_plot.figure = _lineplot_figure(state)
-        self.line_plot.update()
+        self._full_render()
 
         # Intentionally ignores full-array stats from the caller: this view
         # shows y-values-only stats, recomputed on the y column/row, not

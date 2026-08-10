@@ -25,7 +25,14 @@ from npyquick.core import complexproj, limits, profile
 from npyquick.core.pixel_expr import format_unit
 from npyquick.core.stats import ArrayStats, array_stats, is_real_numeric
 from npyquick.serve import colormaps
-from npyquick.serve.views._shared import POS_TOL, empty_plotly_figure, shape_touched, with_plotly_config
+from npyquick.serve.views._shared import (
+    POS_TOL,
+    empty_plotly_figure,
+    measure_viewport_height,
+    plotly_template,
+    shape_touched,
+    with_plotly_config,
+)
 
 Point = tuple[float, float]
 Clim = tuple[float | None, float | None]
@@ -54,6 +61,19 @@ class ImageState:
         self.colormap_reverse: bool = False
         self.pair: str = complexproj.DEFAULT_PAIR
         self.active_panel: int = 0  # 0 or 1; only meaningful in complex mode
+        self.dark: bool = False
+        # Fallback until the first resize() measures the real viewport (see
+        # measure_viewport_height's docstring for why this is baked into the
+        # figure's own layout.height rather than fought over via CSS).
+        # Measured independently, not shared: image_row's flex layout only
+        # keeps image_plot/profile_plot at the same vertical position when
+        # there's enough WIDTH for the 62:38 side-by-side split to actually
+        # fit; on a narrow enough window they wrap onto separate lines
+        # instead (Quasar's row wraps by default), and profile_plot's real
+        # top position — and therefore how much viewport height is left
+        # for it — is then nothing like image_plot's.
+        self.plot_height: int = 650
+        self.profile_height: int = 400
 
         # Populated by ImageView.set_data, per mode:
         self.array: np.ndarray | None = None  # full-res array, for pair switches
@@ -97,7 +117,7 @@ def _line_shape(endpoints: tuple[Point, Point], xref: str = "x", yref: str = "y"
     }
 
 
-def _axis_layout(unit: str) -> dict:
+def _axis_layout(unit: str, height: int) -> dict:
     return {
         # scaleanchor+constrain=domain: square pixels, letterboxed rather than
         # stretched or range-blown-out when the container doesn't match the
@@ -109,6 +129,9 @@ def _axis_layout(unit: str) -> dict:
                              # interaction target in Plotly).
         "margin": {"l": 20, "r": 20, "t": 20, "b": 20},
         "showlegend": False,
+        # See measure_viewport_height's docstring (_shared.py) for why this
+        # is an explicit figure property rather than a CSS/container size.
+        "height": height,
     }
 
 
@@ -123,7 +146,10 @@ def _gray_figure(state: ImageState) -> dict:
         hovertemplate=f"x=%{{x}}{unit}<br>y=%{{y}}{unit}<br>value=%{{z}}<extra></extra>",
     )
     fig = go.Figure(data=[heat, _marker_trace(state.endpoints)])
-    fig.update_layout(**_axis_layout(unit), shapes=[_line_shape(state.endpoints)])
+    fig.update_layout(
+        **_axis_layout(unit, state.plot_height), shapes=[_line_shape(state.endpoints)],
+        template=plotly_template(state.dark),
+    )
     return with_plotly_config(fig)
 
 
@@ -139,7 +165,10 @@ def _rgb_figure(state: ImageState) -> dict:
         hovertemplate=f"x=%{{x}}{unit}<br>y=%{{y}}{unit}<br>R=%{{z[0]}} G=%{{z[1]}} B=%{{z[2]}}<extra></extra>",
     )
     fig = go.Figure(data=[img, _marker_trace(state.endpoints)])
-    fig.update_layout(**_axis_layout(unit), shapes=[_line_shape(state.endpoints)])
+    fig.update_layout(
+        **_axis_layout(unit, state.plot_height), shapes=[_line_shape(state.endpoints)],
+        template=plotly_template(state.dark),
+    )
     return with_plotly_config(fig)
 
 
@@ -184,6 +213,8 @@ def _complex_figure(state: ImageState) -> dict:
         dragmode="pan",
         margin={"l": 20, "r": 20, "t": 30, "b": 20},
         showlegend=False,
+        template=plotly_template(state.dark),
+        height=state.plot_height,  # see _axis_layout's comment
         shapes=[
             _line_shape(state.endpoints, xref="x", yref="y"),
             _line_shape(state.endpoints, xref="x2", yref="y2"),
@@ -207,7 +238,9 @@ def _active_display(state: ImageState) -> np.ndarray:
     return state.display
 
 
-def _profile_figure(distances: np.ndarray, values: np.ndarray, ylabel: str, unit: str) -> go.Figure:
+def _profile_figure(
+    distances: np.ndarray, values: np.ndarray, ylabel: str, unit: str, dark: bool, height: int,
+) -> go.Figure:
     # compute_profile returns (N,) for grayscale/complex-component data but
     # (C, N) for RGB — go.Scatter silently accepts a 2D `y` without error and
     # renders garbage, so this must split it into per-channel traces instead
@@ -229,6 +262,8 @@ def _profile_figure(distances: np.ndarray, values: np.ndarray, ylabel: str, unit
     fig.update_layout(
         xaxis_title=x_title, yaxis_title=ylabel,
         margin={"l": 40, "r": 20, "t": 20, "b": 40},
+        template=plotly_template(dark),
+        height=height,  # see _axis_layout's comment above
     )
     return fig
 
@@ -239,27 +274,30 @@ class ImageView:
         self._on_clim_change: Callable[[float | None, float | None], None] = lambda vmin, vmax: None
         self._on_active_panel_change: Callable[[], None] = lambda: None
 
+        # No card/title wrapper: this view now lives in its own ui.tab_panel
+        # (app.py), which already supplies that visual identity via the tab
+        # bar — an unsupported shape/dtype now DISABLES that tab instead of
+        # needing this view to hide itself (see app.py's refresh_views).
         with ui.row().classes("items-center gap-2") as self.controls:
-            # min-width: ui.select otherwise sizes to the current VALUE's text
-            # ("Gray"), not the (longer) floating LABEL above it, which clips
-            # the label to "Col...".
+            # min-width: ui.select otherwise sizes to the current VALUE's
+            # text ("Gray"), not the (longer) floating LABEL above it,
+            # which clips the label to "Col...".
             self.colormap_select = ui.select(
                 {name: label for name, label in colormaps.COLORMAPS}, value=self.state.colormap_base,
                 label="Colormap",
-            ).classes("min-w-[9rem]")
-            self.reverse_checkbox = ui.checkbox("Reverse")
+            ).classes("min-w-[9rem]").props("dense")
+            self.reverse_checkbox = ui.checkbox("Reverse").props("dense")
             self.pair_select = ui.select(
                 list(complexproj.IMAGE_PAIRS), value=self.state.pair, label="Pair",
-            )
+            ).props("dense")
             # Names which component's vmin/vmax the edit boxes show/apply to
             # in complex mode (e.g. "Real") — otherwise it's only inferable
             # from which panel you last clicked.
             self.clim_prefix_label = ui.label().classes("text-sm text-gray-500")
-            self.vmin_input = ui.number("vmin", format="%.4g")
-            self.vmax_input = ui.number("vmax", format="%.4g")
-            self.apply_btn = ui.button("Apply")
-            self.reset_btn = ui.button("Reset")
-        self.controls.set_visibility(False)
+            self.vmin_input = ui.number("vmin", format="%.4g").props("dense")
+            self.vmax_input = ui.number("vmax", format="%.4g").props("dense")
+            self.apply_btn = ui.button("Apply").props("dense")
+            self.reset_btn = ui.button("Reset").props("dense")
         self.clim_prefix_label.set_visibility(False)
 
         with ui.row().classes("items-center gap-3") as self.status_row:
@@ -286,13 +324,6 @@ class ImageView:
         with ui.row().classes("w-full items-start gap-2") as self.image_row:
             self.image_plot = ui.plotly(empty_plotly_figure()).classes("flex-[62] min-w-0").style("height: 650px")
             self.profile_plot = ui.plotly(empty_plotly_figure()).classes("flex-[38] min-w-0").style("height: 650px")
-        # Hidden until the first successful set_data: an empty plot left
-        # visible (e.g. because this array's shape/dtype isn't one Image can
-        # handle at all — set_data returns before ever reaching _full_render)
-        # is a tall blank gap that reads as "stuck", not "not applicable",
-        # especially with working Histogram/Line Plot content further down
-        # the same page (there's no tabbed navigation yet — Phase 5).
-        self.image_row.set_visibility(False)
 
         self.image_plot.on("plotly_relayout", self._on_relayout)
         # Plotly attaches a `data` field to every click point that references
@@ -359,21 +390,102 @@ class ImageView:
         state.endpoints = ((x0 * ratio, y0 * ratio), (x1 * ratio, y1 * ratio))
         self._full_render()
 
-    def hide(self) -> None:
-        """Hide every widget this view owns. Called at the top of set_data
-        (so an early return on an unsupported shape/dtype can't leave the
-        PREVIOUS file's plot on screen), and by the app orchestrator directly
-        for cases set_data is never even called — e.g. an .npz that needs an
-        array picked, or a failed npz-member select — where the model holds
-        no displayable array at all right now."""
-        self.controls.set_visibility(False)
-        self.image_row.set_visibility(False)
-        self.status_row.set_visibility(False)
+    async def resize(self) -> None:
+        """Measure the current viewport, store it, then re-render from
+        scratch and force every axis to actually recompute its range.
+
+        The measure_viewport_height() calls are unrelated to the tab-switch
+        staleness issue described below — they're what makes this view's
+        plots fill the browser window's available height (down to a
+        sensible floor) instead of sitting at a fixed pixel height, so a
+        typical window doesn't need to scroll to see the whole plot. See
+        that function's docstring (_shared.py) for why the result has to be
+        applied BOTH ways — stored on state and baked into the next
+        figure's own layout.height, AND set directly as the plot element's
+        own CSS height — dropping either one leaves the SVG either clipped
+        inside its old-sized container or not resized at all. image_plot
+        and profile_plot are measured SEPARATELY (not one height reused for
+        both): image_row's 62:38 side-by-side split only holds while
+        there's enough WIDTH for it — on a narrow enough window the two
+        wrap onto separate lines instead (Quasar's row wraps by default),
+        putting profile_plot at a completely different vertical position
+        with a different amount of viewport left below it.
+
+        The rest of this docstring covers a separate, harder-to-see issue:
+        needed when this view's TAB becomes active:
+        with Quasar's tab panels, an already-mounted-but-currently-INACTIVE
+        panel's ui.plotly element is still a live Vue/Plotly instance under
+        the hood, and set_data()'s .update() call runs (updating the
+        figure's DATA) regardless of whether that panel happens to be the
+        visible one at that moment — the app orchestrator calls set_data()
+        on all views unconditionally, then decides which tab to switch to
+        afterward. If a plot's `react()` (Plotly's own update path for an
+        already-existing instance) runs while its container is hidden/
+        zero-size, Plotly can bake in wrong internal sizing that persists
+        even once the container becomes visible again — observed concretely
+        as the complex mode's Real/Imag subplots rendering at badly wrong
+        proportions after switching INTO the Image tab from a different one.
+
+        Two things were tried and DIDN'T fix it, worth remembering:
+        `run_plot_method("relayout", {"autosize": True})` — the autosize
+        flag only toggles Plotly's own responsive-resize BEHAVIOR going
+        forward, it doesn't force an immediate re-measurement. Calling the
+        real `Plotly.Plots.resize()` via a raw run_javascript snippet (since
+        that nested path isn't reachable through run_plot_method's flat
+        `Plotly[name]` lookup) — actively made it WORSE (new "Cannot read
+        properties of undefined" and "Maximum call stack size exceeded"
+        console errors), likely because it raced the client's own Plotly
+        module still finishing its (re)mount and/or recursed into our own
+        plotly_relayout handler.
+
+        What DOES fix the SIZING: just calling _full_render() again — the
+        exact same call a genuinely fresh, always-correctly-rendered load
+        already goes through (confirmed: loading this same array directly as
+        the startup file, so its tab is the only one ever activated, never
+        reproduces this bug at all). But that alone left one thing still
+        stale: the axis RANGE — Plotly's react() deliberately preserves an
+        axis's current range across an update (it can't tell "wrong range
+        baked in while hidden" apart from "the user deliberately zoomed",
+        and assumes the latter), so the panel that was previously
+        mismeasured kept its bad range even after the resend fixed its
+        overall proportions. Forcing autorange back on for every axis this
+        view's CURRENT mode actually has is what resets it.
+
+        Only the axes that exist for the current mode are included below —
+        confirmed via a real browser's console that relaying out a
+        NONEXISTENT axis (e.g. xaxis2/yaxis2 while in plain gray/RGB mode,
+        which never builds a second subplot at all) is not silently
+        ignored: it throws "Cannot read properties of undefined (reading
+        '_inputDomain')" inside Plotly's own relayout handler, which rejects
+        the promise run_plot_method is awaiting — leaving the Python-side
+        call with no successful response ever coming, surfacing later as a
+        JavaScript-did-not-respond timeout with no obvious connection to the
+        real cause."""
+        if self.state.array is not None:
+            self.state.plot_height = await measure_viewport_height(self.image_plot)
+            self.state.profile_height = await measure_viewport_height(self.profile_plot)
+            self.image_plot.style(f"height: {self.state.plot_height}px")
+            self.profile_plot.style(f"height: {self.state.profile_height}px")
+            self._full_render()
+            relayout = {"xaxis.autorange": True, "yaxis.autorange": "reversed"}
+            if self.state.mode == "complex":
+                relayout.update({"xaxis2.autorange": True, "yaxis2.autorange": "reversed"})
+            await self.image_plot.run_plot_method("relayout", relayout)
+
+    def set_dark(self, is_dark: bool) -> None:
+        """Switch Plotly's own built-in dark template (see
+        serve/views/_shared.py's plotly_template) — Quasar's dark mode
+        already recolors this view's card/controls on its own; only the
+        Plotly figures need an explicit nudge since Plotly doesn't watch for
+        that itself."""
+        self.state.dark = is_dark
+        if self.state.array is not None:
+            self._full_render()
 
     def set_data(self, array: np.ndarray, stats: ArrayStats | None = None) -> str | None:
         """Prepare `array` (already loaded by the caller) for display. Returns
         an error message, or None on success."""
-        self.hide()
+        self.status_row.set_visibility(False)
         state = self.state
         is_complex = np.issubdtype(array.dtype, np.complexfloating)
         is_rgb = array.ndim == 3 and array.shape[2] == 3 and is_real_numeric(array)
@@ -430,8 +542,6 @@ class ImageView:
             state.display = np.asarray(strided)
             state.clim = _default_clim(state.display)
 
-        self.controls.set_visibility(True)
-        self.image_row.set_visibility(True)
         self._full_render()
         self._update_status_labels(array, stats)
         return None
@@ -493,7 +603,9 @@ class ImageView:
             ylabel = complexproj.IMAGE_PAIRS[state.pair][state.active_panel]
         else:
             ylabel = "Intensity"
-        self.profile_plot.figure = _profile_figure(distances, values, ylabel, state.unit)
+        self.profile_plot.figure = _profile_figure(
+            distances, values, ylabel, state.unit, state.dark, state.profile_height,
+        )
         self.profile_plot.update()
 
     def _full_render(self) -> None:

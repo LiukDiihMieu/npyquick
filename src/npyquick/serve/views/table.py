@@ -24,6 +24,7 @@ from nicegui import ui
 
 from npyquick.core import limits
 from npyquick.core.stats import ArrayStats, array_stats
+from npyquick.serve.views._shared import fit_height_to_viewport
 
 _SERVE_TABLE_MAX_PER_AXIS = 512
 
@@ -82,18 +83,26 @@ def _grid_data(sub: np.ndarray, flat: bool) -> tuple[list[dict], list[dict]]:
 
 class TableView:
     def __init__(self) -> None:
+        # No card/title wrapper: this view now lives in its own ui.tab_panel
+        # (app.py), which already supplies that visual identity via the tab
+        # bar — see the Image/Histogram/Line Plot views' docstrings for the
+        # same note. No hide() either: Table is the universal fallback (never
+        # incompatible), and the "nothing loaded at all" global case is
+        # handled by app.py hiding the whole tabs+panels container in one
+        # shot, not per-view.
         self.info_label = ui.label()
         self.trunc_label = ui.label().classes("text-amber-600")
         self.trunc_label.set_visibility(False)
 
-        # auto_size_columns=False: its default (True, when columnDefs has no
-        # flex columns) sets an autoSizeStrategy that fits columns to the grid
-        # width — AG Grid crashes on mount trying to do that against the
-        # placeholder empty columnDefs=[] every grid here starts with (before
-        # the first set_data call ever supplies real data), which silently
-        # leaves the whole element broken (later .options updates never take
-        # effect either). Explicit widths below match the desktop
-        # QTableView's setDefaultSectionSize(90)/(70) instead.
+        # auto_size_columns=False: its default (True, when columnDefs has
+        # no flex columns) sets an autoSizeStrategy that fits columns to
+        # the grid width — AG Grid crashes on mount trying to do that
+        # against the placeholder empty columnDefs=[] every grid here
+        # starts with (before the first set_data call ever supplies real
+        # data), which silently leaves the whole element broken (later
+        # .options updates never take effect either). Explicit widths
+        # below match the desktop QTableView's
+        # setDefaultSectionSize(90)/(70) instead.
         self.single_grid = ui.aggrid(
             {"columnDefs": [], "rowData": [], "defaultColDef": {"width": 90}},
             auto_size_columns=False,
@@ -114,19 +123,25 @@ class TableView:
 
         self.message_label = ui.label().classes("text-gray-500")
         self.message_label.set_visibility(False)
+        # Dark mode note: AG Grid's theme is already dark-mode-aware natively
+        # — NiceGUI's bundled aggrid.js watches document.body's Quasar
+        # "body--dark" class and switches the grid's own colorSchemeVariable
+        # accordingly, with zero code needed here (confirmed by reading
+        # aggrid.js directly) — so, unlike the three Plotly-based views,
+        # TableView has no set_dark method at all.
 
-    def hide(self) -> None:
-        """Hide every widget this view owns. Table itself never early-returns
-        inside set_data (it's the universal fallback), so nothing here is
-        reached FROM set_data — this exists purely for the app orchestrator to
-        call directly when there's no displayable array at all right now
-        (e.g. an .npz that needs an array picked), matching the other three
-        views' hide()."""
-        self.single_grid.set_visibility(False)
-        self.rgb_row.set_visibility(False)
-        self.message_label.set_visibility(False)
-        self.trunc_label.set_visibility(False)
-        self.info_label.text = ""
+    async def resize(self) -> None:
+        """Fit whichever grid is currently visible to the viewport (see
+        _shared.fit_height_to_viewport's docstring) — called on tab-
+        activation and on a live browser-window resize, same triggers as
+        the three Plotly views' resize(). Unlike those views, ag-Grid has
+        no analogous stale-react()-while-hidden bug to also guard against
+        (see ImageView.resize's docstring) — it just needs its container's
+        height kept in sync with the window, nothing needs re-rendering."""
+        if self.single_grid.visible:
+            await fit_height_to_viewport(self.single_grid)
+        elif self.rgb_row.visible:
+            await fit_height_to_viewport(*self.rgb_grids)
 
     def set_data(self, array: np.ndarray, stats: ArrayStats | None = None) -> None:
         """Always succeeds — Table is the universal fallback (can_handle is
