@@ -66,13 +66,8 @@ class ImageState:
         self.dark: bool = False
         # Fallback until the first resize() measures the real viewport. The
         # measured values are retained for the next genuine data render.
-        # Measured independently, not shared: image_row's flex layout only
-        # keeps image_plot/profile_plot at the same vertical position when
-        # there's enough WIDTH for the 62:38 side-by-side split to actually
-        # fit; on a narrow enough window they wrap onto separate lines
-        # instead (Quasar's row wraps by default), and profile_plot's real
-        # top position — and therefore how much viewport height is left
-        # for it — is then nothing like image_plot's.
+        # Measured independently so each Plotly instance remains responsible
+        # for its own mounted box inside the draggable splitter.
         self.plot_height: int = 650
         self.profile_height: int = 400
 
@@ -323,24 +318,18 @@ class ImageView:
             self.anomaly_label = ui.label().classes("text-red-500 text-sm")
         self.status_row.set_visibility(False)
 
-        # Side by side, like the desktop's image/profile QSplitter (default
-        # sizes [780, 480], ~62:38 — matched here via flex-[62]/flex-[38])
-        # rather than stacked, which wasted a lot of vertical scrolling on a
-        # typical wide browser window. min-w-0 on both: a flex item's default
-        # min-width is its CONTENT's min-content size, not 0 — and if Plotly
-        # ever renders its SVG at a size wider than the item's flex-basis
-        # share (observed: right when this view becomes visible as the
-        # startup file-picker dialog closes, Plotly can measure the
-        # container mid-close-transition and lock in a near-full-row SVG
-        # width for BOTH plots), the browser refuses to shrink either flex
-        # item back down to its 62/38 share and wraps them onto separate
-        # lines instead — a classic flexbox gotcha, independent of whatever
-        # caused the oversized initial measurement in the first place.
-        # min-w-0 removes that content-based floor entirely, so flex-grow
-        # always wins regardless of what Plotly happened to render at.
-        with ui.row().classes("w-full items-start gap-2") as self.image_row:
-            self.image_plot = ui.plotly(empty_plotly_figure()).classes("flex-[62] min-w-0").style("height: 650px")
-            self.profile_plot = ui.plotly(empty_plotly_figure()).classes("flex-[38] min-w-0").style("height: 650px")
+        # Match the desktop's draggable image/profile QSplitter, whose
+        # default sizes [780, 480] are approximately 62:38. The conservative
+        # limits keep either plot from becoming unusably narrow. Plotly's
+        # responsive mode is deliberately disabled elsewhere, so the change
+        # callback explicitly resizes both existing browser-side figures.
+        self.image_splitter = ui.splitter(
+            value=62, limits=(20, 80), on_change=self._on_splitter_changed,
+        ).classes("w-full")
+        with self.image_splitter.before:
+            self.image_plot = ui.plotly(empty_plotly_figure()).classes("w-full min-w-0").style("height: 650px")
+        with self.image_splitter.after:
+            self.profile_plot = ui.plotly(empty_plotly_figure()).classes("w-full min-w-0").style("height: 650px")
 
         self.image_plot.on("plotly_relayout", self._on_relayout)
         # Plotly attaches a `data` field to every click point that references
@@ -377,6 +366,10 @@ class ImageView:
 
     def set_on_active_panel_change(self, cb: Callable[[], None]) -> None:
         self._on_active_panel_change = cb
+
+    async def _on_splitter_changed(self) -> None:
+        """Resize both Plotly figures after the user releases the divider."""
+        await self.resize()
 
     def get_clim(self) -> Clim:
         if self.state.mode == "rgb":
