@@ -29,8 +29,9 @@ from npyquick.serve.views._shared import (
     POS_TOL,
     control_group,
     empty_plotly_figure,
-    measure_viewport_height,
     plotly_template,
+    plotly_template_payload,
+    resize_plotly_to_viewport,
     shape_touched,
     with_plotly_config,
 )
@@ -63,9 +64,8 @@ class ImageState:
         self.pair: str = complexproj.DEFAULT_PAIR
         self.active_panel: int = 0  # 0 or 1; only meaningful in complex mode
         self.dark: bool = False
-        # Fallback until the first resize() measures the real viewport (see
-        # measure_viewport_height's docstring for why this is baked into the
-        # figure's own layout.height rather than fought over via CSS).
+        # Fallback until the first resize() measures the real viewport. The
+        # measured values are retained for the next genuine data render.
         # Measured independently, not shared: image_row's flex layout only
         # keeps image_plot/profile_plot at the same vertical position when
         # there's enough WIDTH for the 62:38 side-by-side split to actually
@@ -130,8 +130,7 @@ def _axis_layout(unit: str, height: int) -> dict:
                              # interaction target in Plotly).
         "margin": {"l": 20, "r": 20, "t": 20, "b": 20},
         "showlegend": False,
-        # See measure_viewport_height's docstring (_shared.py) for why this
-        # is an explicit figure property rather than a CSS/container size.
+        # Keep a genuine data render aligned with the last measured viewport.
         "height": height,
     }
 
@@ -409,96 +408,27 @@ class ImageView:
         self._full_render()
 
     async def resize(self) -> None:
-        """Measure the current viewport, store it, then re-render from
-        scratch and force every axis to actually recompute its range.
-
-        The measure_viewport_height() calls are unrelated to the tab-switch
-        staleness issue described below — they're what makes this view's
-        plots fill the browser window's available height (down to a
-        sensible floor) instead of sitting at a fixed pixel height, so a
-        typical window doesn't need to scroll to see the whole plot. See
-        that function's docstring (_shared.py) for why the result has to be
-        applied BOTH ways — stored on state and baked into the next
-        figure's own layout.height, AND set directly as the plot element's
-        own CSS height — dropping either one leaves the SVG either clipped
-        inside its old-sized container or not resized at all. image_plot
-        and profile_plot are measured SEPARATELY (not one height reused for
-        both): image_row's 62:38 side-by-side split only holds while
-        there's enough WIDTH for it — on a narrow enough window the two
-        wrap onto separate lines instead (Quasar's row wraps by default),
-        putting profile_plot at a completely different vertical position
-        with a different amount of viewport left below it.
-
-        The rest of this docstring covers a separate, harder-to-see issue:
-        needed when this view's TAB becomes active:
-        with Quasar's tab panels, an already-mounted-but-currently-INACTIVE
-        panel's ui.plotly element is still a live Vue/Plotly instance under
-        the hood, and set_data()'s .update() call runs (updating the
-        figure's DATA) regardless of whether that panel happens to be the
-        visible one at that moment — the app orchestrator calls set_data()
-        on all views unconditionally, then decides which tab to switch to
-        afterward. If a plot's `react()` (Plotly's own update path for an
-        already-existing instance) runs while its container is hidden/
-        zero-size, Plotly can bake in wrong internal sizing that persists
-        even once the container becomes visible again — observed concretely
-        as the complex mode's Real/Imag subplots rendering at badly wrong
-        proportions after switching INTO the Image tab from a different one.
-
-        Two things were tried and DIDN'T fix it, worth remembering:
-        `run_plot_method("relayout", {"autosize": True})` — the autosize
-        flag only toggles Plotly's own responsive-resize BEHAVIOR going
-        forward, it doesn't force an immediate re-measurement. Calling the
-        real `Plotly.Plots.resize()` via a raw run_javascript snippet (since
-        that nested path isn't reachable through run_plot_method's flat
-        `Plotly[name]` lookup) — actively made it WORSE (new "Cannot read
-        properties of undefined" and "Maximum call stack size exceeded"
-        console errors), likely because it raced the client's own Plotly
-        module still finishing its (re)mount and/or recursed into our own
-        plotly_relayout handler.
-
-        What DOES fix the SIZING: just calling _full_render() again — the
-        exact same call a genuinely fresh, always-correctly-rendered load
-        already goes through (confirmed: loading this same array directly as
-        the startup file, so its tab is the only one ever activated, never
-        reproduces this bug at all). But that alone left one thing still
-        stale: the axis RANGE — Plotly's react() deliberately preserves an
-        axis's current range across an update (it can't tell "wrong range
-        baked in while hidden" apart from "the user deliberately zoomed",
-        and assumes the latter), so the panel that was previously
-        mismeasured kept its bad range even after the resend fixed its
-        overall proportions. Forcing autorange back on for every axis this
-        view's CURRENT mode actually has is what resets it.
-
-        Only the axes that exist for the current mode are included below —
-        confirmed via a real browser's console that relaying out a
-        NONEXISTENT axis (e.g. xaxis2/yaxis2 while in plain gray/RGB mode,
-        which never builds a second subplot at all) is not silently
-        ignored: it throws "Cannot read properties of undefined (reading
-        '_inputDomain')" inside Plotly's own relayout handler, which rejects
-        the promise run_plot_method is awaiting — leaving the Python-side
-        call with no successful response ever coming, surfacing later as a
-        JavaScript-did-not-respond timeout with no obvious connection to the
-        real cause."""
+        """Resize both existing browser-side plots without retransmitting
+        their image/profile traces, then repair the image axes after hidden
+        tab activation. The autorange payload remains mode-aware because
+        Plotly rejects references to nonexistent secondary axes."""
         if self.state.array is not None:
-            self.state.plot_height = await measure_viewport_height(self.image_plot)
-            self.state.profile_height = await measure_viewport_height(self.profile_plot)
+            self.state.plot_height = await resize_plotly_to_viewport(self.image_plot)
+            self.state.profile_height = await resize_plotly_to_viewport(self.profile_plot)
             self.image_plot.style(f"height: {self.state.plot_height}px")
             self.profile_plot.style(f"height: {self.state.profile_height}px")
-            self._full_render()
             relayout = {"xaxis.autorange": True, "yaxis.autorange": "reversed"}
             if self.state.mode == "complex":
                 relayout.update({"xaxis2.autorange": True, "yaxis2.autorange": "reversed"})
             await self.image_plot.run_plot_method("relayout", relayout)
 
     def set_dark(self, is_dark: bool) -> None:
-        """Switch Plotly's own built-in dark template (see
-        serve/views/_shared.py's plotly_template) — Quasar's dark mode
-        already recolors this view's card/controls on its own; only the
-        Plotly figures need an explicit nudge since Plotly doesn't watch for
-        that itself."""
+        """Switch both Plotly templates without retransmitting trace data."""
         self.state.dark = is_dark
         if self.state.array is not None:
-            self._full_render()
+            template = plotly_template_payload(is_dark)
+            self.image_plot.run_plot_method("relayout", {"template": template})
+            self.profile_plot.run_plot_method("relayout", {"template": template})
 
     def set_data(self, array: np.ndarray, stats: ArrayStats | None = None) -> str | None:
         """Prepare `array` (already loaded by the caller) for display. Returns

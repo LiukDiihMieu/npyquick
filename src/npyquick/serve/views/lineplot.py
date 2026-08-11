@@ -32,8 +32,9 @@ from npyquick.core.stats import ArrayStats, array_stats, is_real_numeric
 from npyquick.serve.views._shared import (
     control_group,
     empty_plotly_figure,
-    measure_viewport_height,
     plotly_template,
+    plotly_template_payload,
+    resize_plotly_to_viewport,
 )
 
 
@@ -49,10 +50,8 @@ class LineplotState:
         self.log_x: bool = False
         self.log_y: bool = False
         self.dark: bool = False
-        # Fallback until the first resize() measures the real viewport (see
-        # measure_viewport_height's docstring in _shared.py for why this is
-        # baked into the figure's own layout.height rather than fought over
-        # via CSS).
+        # Fallback until the first resize() measures the real viewport; the
+        # value is retained for the next genuine data render.
         self.plot_height: int = 400
 
 
@@ -75,7 +74,7 @@ def _lineplot_figure(state: LineplotState) -> dict:
         showlegend=False,
         margin={"l": 50, "r": 20, "t": 20, "b": 40},
         template=plotly_template(state.dark),
-        height=state.plot_height,  # see measure_viewport_height's docstring
+        height=state.plot_height,
     )
     d = fig.to_plotly_json()
     # scrollZoom deliberately off: the shift-for-y-axis wheel handler wired in
@@ -156,27 +155,22 @@ class LineplotView:
     # ------------------------------------------------------------------
 
     async def resize(self) -> None:
-        """Measure the current viewport and store it (see
-        _shared.measure_viewport_height's docstring — this is what lets a
-        typical window show the whole plot without scrolling), then
-        re-render. The re-render itself is for a separate reason: see
-        ImageView.resize's docstring for the tab-activation staleness race
-        this also has to guard against — same conclusion applies here, just
-        re-render from scratch (what a fresh load already does correctly)
-        rather than trying to nudge Plotly into re-measuring after the
-        fact."""
+        """Fit the existing plot to the viewport without resending its data."""
         if self.state.x_disp is not None:
-            self.state.plot_height = await measure_viewport_height(self.line_plot)
+            self.state.plot_height = await resize_plotly_to_viewport(self.line_plot)
+            # Keep NiceGUI's server-side style model aligned with the height
+            # already applied by the client helper. This is a tiny style update,
+            # not a figure update, and prevents a later element update from
+            # restoring the construction-time 400px fallback.
             self.line_plot.style(f"height: {self.state.plot_height}px")
-            self._full_render()
 
     def set_dark(self, is_dark: bool) -> None:
-        """See ImageView.set_dark's docstring — same idea, Plotly's template
-        needs an explicit nudge that Quasar's own dark-mode switch doesn't
-        give it for free."""
+        """Switch Plotly's template without retransmitting line data."""
         self.state.dark = is_dark
         if self.state.x_disp is not None:
-            self._full_render()
+            self.line_plot.run_plot_method(
+                "relayout", {"template": plotly_template_payload(is_dark)},
+            )
 
     def _full_render(self) -> None:
         self.line_plot.figure = _lineplot_figure(self.state)

@@ -56,6 +56,15 @@ def plotly_template(dark: bool) -> str:
     return "plotly_dark" if dark else "plotly"
 
 
+def plotly_template_payload(dark: bool) -> dict:
+    """Return Plotly's resolved built-in template for a layout-only update.
+
+    Sending the template object through ``Plotly.relayout`` is only a few
+    kilobytes and, unlike rebuilding a figure, cannot include its trace data.
+    """
+    return go.Layout(template=plotly_template(dark)).to_plotly_json()["template"]
+
+
 def empty_plotly_figure() -> dict:
     """A fresh placeholder dict for a ui.plotly element with no data yet
     (real data only arrives later via set_data()), starting out hidden (see
@@ -91,17 +100,10 @@ def with_plotly_config(fig: go.Figure) -> dict:
     console and can leave the plot's internal size wrong afterwards (observed
     as the Image/Profile side-by-side split rendering at the wrong ratio, or
     even wrapping onto two lines on a narrow window, well after any hide/show
-    had actually finished). Every place that changes what's plotted already
-    goes through _full_render()/set_data(), which rebuilds the whole figure
-    via Plotly.newPlot/react and sizes itself correctly from the container's
-    CURRENT size at that moment — so turning off the separate, crash-prone
-    auto-resize-on-any-DOM-change path costs nothing except no longer
-    auto-adjusting to a live BROWSER WINDOW resize on its own. That
-    remaining gap is closed separately and deliberately, not by flipping
-    this back on: app.py's window-resize listener calls the active view's
-    resize() (which itself calls measure_viewport_height() below, then
-    re-renders), reusing the same already-correct "rebuild from scratch"
-    path instead of going through Plotly's own crash-prone auto-resize."""
+    had actually finished). Turning it off leaves browser-window and tab
+    activation sizing to the app's deliberate, visibility-aware
+    ``resize_plotly_to_viewport`` path, which explicitly relayouts width and
+    height without retransmitting trace data."""
     d = fig.to_plotly_json()
     d["config"] = {
         "edits": {"shapePosition": True}, "scrollZoom": True, "responsive": False,
@@ -110,61 +112,64 @@ def with_plotly_config(fig: go.Figure) -> dict:
     return d
 
 
-async def measure_viewport_height(element, *, min_height: int = 280, bottom_margin: int = 48) -> int:
-    """Return how much of the browser window's height remains below
-    `element`'s current top position (clamped to a floor). Measures live
-    via the browser's own layout (getBoundingClientRect) rather than a
-    precomputed per-view offset, since exactly how much sits above a given
-    plot varies with which optional status/anomaly labels happen to be
-    visible right now.
+async def resize_plotly_to_viewport(
+    element, *, min_height: int = 280, bottom_margin: int = 48,
+) -> int:
+    """Resize an existing, visible Plotly figure entirely in the browser.
 
-    The caller must do TWO things with the result, both confirmed
-    necessary by direct measurement (dropping either one left the
-    rendered SVG clipped inside its own container, or at its old size
-    entirely):
-    1. Store it on the view's state and bake it into the next figure's own
-       `layout.height`, ALONGSIDE `layout.autosize = False` (see
-       ImageView._axis_layout's comment for why autosize has to be off —
-       left at its default True, Plotly's own internal `_fullLayout.height`
-       correctly picks up an explicit height, but silently never applies it
-       to the actual DOM/SVG at all).
-    2. ALSO set it as the element's own CSS height directly (e.g.
-       `self.hist_plot.style(f"height: {h}px")`) BEFORE re-rendering.
-       Skipping this leaves the SVG rendered at the new height internally
-       (confirmed via direct inspection of the mounted component's state)
-       but still clipped inside the OLD, unchanged container box — the two
-       need to move together, one doesn't imply the other.
+    This sends no trace data: it waits for NiceGUI's asynchronously
+    loaded Plotly component to be initialized and displayed, then updates the
+    existing plot's explicit width and height with a small relayout. The width
+    must be supplied directly: with this app's ``responsive=False`` config,
+    Plotly.Plots.resize() left ``_fullLayout.width`` stuck at its initial value
+    even though the HTML container itself had already resized (confirmed in a
+    real browser). The bounded readiness wait is important for tab activation,
+    where the Python value change can arrive just before Quasar has made the
+    target panel visible.
 
-    Called from each Plotly-based view's resize() — itself triggered on
-    tab-activation (see app.py's refresh_views) and on a live
-    browser-window resize (see app.py's window-resize listener). min_height
-    is the floor below which this stops shrinking further — a genuinely
-    too-short window just falls back to the page's own natural scrolling
-    beyond that point, rather than squeezing the view down to something
-    unusably small. bottom_margin's default (48, not a token amount) is
-    NOT slack for the plot itself — it's covering fixed chrome that sits
-    BELOW wherever the plot ends regardless of its height: Quasar's own
-    `q-tab-panel` bottom padding (16px) + this app's own outer-column
-    bottom padding (16px, see app.py's `p-4`) + the browser's default
-    `<body>` margin (16px). Measuring from the plot's own top can't see
-    any of that — it has to be reserved unconditionally instead."""
-    return await ui.run_javascript(f"""
-        const el = getHtmlElement({element.id});
-        const top = el.getBoundingClientRect().top;
-        return Math.max({min_height}, window.innerHeight - top - {bottom_margin});
-    """)
+    Returns the applied height so the caller can keep its Python state in sync
+    for the next genuine data render.
+    """
+    return int(await ui.run_javascript(f"""
+        return await new Promise((resolve, reject) => {{
+            const deadline = performance.now() + 2000;
+            const attempt = () => {{
+                const comp = getElement("{element.id}");
+                const gd = comp?.$el;
+                const displayed = gd?.isConnected && gd.getClientRects().length > 0
+                    && gd.getBoundingClientRect().width > 0;
+                if (comp?.Plotly && gd?._fullLayout && displayed) {{
+                    const rect = gd.getBoundingClientRect();
+                    const width = Math.round(rect.width);
+                    const top = rect.top;
+                    const height = Math.max(
+                        {min_height}, window.innerHeight - top - {bottom_margin},
+                    );
+                    gd.style.height = height + 'px';
+                    Promise.resolve(comp.Plotly.relayout(gd, {{width, height}}))
+                        .then(() => resolve(height))
+                        .catch((error) => reject(error));
+                    return;
+                }}
+                if (performance.now() >= deadline) {{
+                    reject(new Error(
+                        'Plotly element {element.id} did not become visible and ready within 2 seconds',
+                    ));
+                    return;
+                }}
+                setTimeout(attempt, 20);
+            }};
+            attempt();
+        }});
+    """, timeout=3.0))
 
 
 async def fit_height_to_viewport(*elements, min_height: int = 280, bottom_margin: int = 16) -> None:
     """Pin each element's CSS height to the browser window's remaining
     vertical space below wherever it currently sits, so a view fills the
-    visible viewport without the page needing to scroll. Same measurement
-    as measure_viewport_height, applied directly as a style instead of
-    being returned — safe for ag-Grid (used by TableView.resize()), which
-    genuinely does track its own container's live CSS size via its own
-    internal ResizeObserver. NOT used for Plotly elements — see
-    measure_viewport_height's docstring for why that needs a different
-    approach (baking the height into the figure itself)."""
+    visible viewport without the page needing to scroll. This direct CSS
+    resize is for non-Plotly elements; Plotly also needs the explicit relayout
+    performed by ``resize_plotly_to_viewport``."""
     if not elements:
         return
     ids = ", ".join(str(el.id) for el in elements)

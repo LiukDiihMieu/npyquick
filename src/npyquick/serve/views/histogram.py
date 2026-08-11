@@ -26,8 +26,9 @@ from npyquick.serve.views._shared import (
     POS_TOL,
     control_group,
     empty_plotly_figure,
-    measure_viewport_height,
     plotly_template,
+    plotly_template_payload,
+    resize_plotly_to_viewport,
     shape_touched,
     with_plotly_config,
 )
@@ -68,10 +69,8 @@ class HistogramState:
         self.counts: np.ndarray | None = None
         self.clim: tuple[float, float] | None = None
         self.dark: bool = False
-        # Fallback until the first resize() measures the real viewport (see
-        # measure_viewport_height's docstring in _shared.py for why this is
-        # baked into the figure's own layout.height rather than fought over
-        # via CSS).
+        # Fallback until the first resize() measures the real viewport; the
+        # value is retained for the next genuine data render.
         self.plot_height: int = 350
 
 
@@ -147,7 +146,7 @@ def _histogram_figure(state: HistogramState) -> dict:
         showlegend=False,
         margin={"l": 50, "r": 20, "t": 20, "b": 40},
         template=plotly_template(state.dark),
-        height=state.plot_height,  # see measure_viewport_height's docstring
+        height=state.plot_height,
     )
     return with_plotly_config(fig)
 
@@ -210,27 +209,20 @@ class HistogramView:
         self._on_clim_dragged = cb
 
     async def resize(self) -> None:
-        """Measure the current viewport and store it (see
-        _shared.measure_viewport_height's docstring — this is what lets a
-        typical window show the whole plot without scrolling), then
-        re-render. The re-render itself is for a separate reason: see
-        ImageView.resize's docstring for the tab-activation staleness race
-        this also has to guard against — same conclusion applies here, just
-        re-render from scratch (what a fresh load already does correctly)
-        rather than trying to nudge Plotly into re-measuring after the
-        fact."""
+        """Resize the existing browser-side plot without retransmitting its
+        histogram trace. See ``resize_plotly_to_viewport`` for why this uses
+        an explicit Plotly relayout rather than Plotly's responsive resize."""
         if self.state.array is not None:
-            self.state.plot_height = await measure_viewport_height(self.hist_plot)
+            self.state.plot_height = await resize_plotly_to_viewport(self.hist_plot)
             self.hist_plot.style(f"height: {self.state.plot_height}px")
-            self._full_render()
 
     def set_dark(self, is_dark: bool) -> None:
-        """See ImageView.set_dark's docstring — same idea, Plotly's template
-        needs an explicit nudge that Quasar's own dark-mode switch doesn't
-        give it for free."""
+        """Switch Plotly's template without retransmitting histogram data."""
         self.state.dark = is_dark
         if self.state.array is not None:
-            self._full_render()
+            self.hist_plot.run_plot_method(
+                "relayout", {"template": plotly_template_payload(is_dark)},
+            )
 
     def set_data(self, array: np.ndarray, stats: ArrayStats | None = None) -> str | None:
         self.stats_grid.set_visibility(False)
