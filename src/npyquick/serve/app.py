@@ -90,7 +90,7 @@ def run_server(file: str | None, *, host: str, port: int) -> None:
                 dark_btn = ui.button(icon="brightness_auto", color=None).props("flat dense round").classes("text-white")
                 dark_btn.tooltip("Theme: follows system")
 
-        with ui.column().classes("w-full max-w-[1600px] mx-auto p-2 gap-2"):
+        with ui.column().classes("w-full max-w-[1600px] mx-auto px-2 pb-2 pt-0 gap-2"):
             # A compact, bordered/tinted banner with an icon — instead of a
             # bare line of red text — for load/compatibility errors ("Line
             # Plot doesn't support dtype complex64", a failed npz select,
@@ -137,25 +137,25 @@ def run_server(file: str | None, *, host: str, port: int) -> None:
                 tab_histogram = ui.tab("histogram", label="Histogram")
                 tab_lineplot = ui.tab("lineplot", label="Line Plot")
                 tab_table = ui.tab("table", label="Table")
-            # p-0 pt-2 gap-2: Quasar's own QTabPanel default padding (16px)
+            # p-0 gap-2: Quasar's own QTabPanel default padding (16px)
             # would be a FOURTH layer of outer margin stacking on top of
             # .nicegui-content and the outer ui.column() above (see the
             # ui.query(".nicegui-content") comment near the top of this
             # function for the general principle: only one layer should own
-            # outer spacing) — zeroed out except for a small pt-2 so the
-            # tabs and their panel content aren't touching. This overrides
+            # outer spacing) — zeroed out entirely; the outer column's gap-2
+            # already separates the tabs from their panel content. This overrides
             # Quasar's own rule because NiceGUI's CSS layer order (@layer
             # ... quasar, nicegui, ... utilities ...) puts "quasar" BEFORE
             # "utilities", so a plain (non-!important) Tailwind class here
             # reliably wins.
             with ui.tab_panels(view_tabs).classes("w-full") as view_panels:
-                with ui.tab_panel(tab_image).classes("p-0 pt-2 gap-2"):
+                with ui.tab_panel(tab_image).classes("p-0 gap-2"):
                     image_view = ImageView()
-                with ui.tab_panel(tab_histogram).classes("p-0 pt-2 gap-2"):
+                with ui.tab_panel(tab_histogram).classes("p-0 gap-2"):
                     histogram_view = HistogramView()
-                with ui.tab_panel(tab_lineplot).classes("p-0 pt-2 gap-2"):
+                with ui.tab_panel(tab_lineplot).classes("p-0 gap-2"):
                     lineplot_view = LineplotView()
-                with ui.tab_panel(tab_table).classes("p-0 pt-2 gap-2"):
+                with ui.tab_panel(tab_table).classes("p-0 gap-2"):
                     table_view = TableView()
             view_tabs.set_visibility(False)
             view_panels.set_visibility(False)
