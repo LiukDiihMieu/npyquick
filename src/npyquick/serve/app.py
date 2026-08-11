@@ -12,6 +12,7 @@ png" button in its modebar.
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 from nicegui import core as nicegui_core
 from nicegui import ui
@@ -36,15 +37,15 @@ from npyquick.serve.views.table import TableView
 # connections, since the limit is advertised to clients at handshake time.
 nicegui_core.sio.eio.max_http_buffer_size = 200 * 1024 * 1024  # 200 MiB
 
+_ICON_PATH = Path(__file__).resolve().parents[1] / "resources" / "icon.svg"
+
 
 def run_server(file: str | None, *, host: str, port: int) -> None:
     @ui.page("/")
     async def index() -> None:
-        # Custom theme color (Quasar's own CSS-variable mechanism via
-        # ui.colors, not per-element hand-rolled colors) — a muted teal
-        # instead of Quasar's default blue, so this reads as a purpose-built
-        # tool rather than a generic default-styled page.
-        ui.colors(primary="#00695c", secondary="#26a69a", accent="#ff7043")
+        # Use the existing logo's brand palette through Quasar's theme
+        # variables rather than styling individual controls by hand.
+        ui.colors(primary="#1f2d44", secondary="#2b3a55", accent="#fe721b")
         # NiceGUI's own page root (.nicegui-content) carries a default
         # padding+gap of its own, stacking on top of this page's outer
         # ui.column() AND each ui.tab_panel()'s padding below — confirmed via
@@ -79,8 +80,8 @@ def run_server(file: str | None, *, host: str, port: int) -> None:
         # correctly inherit via normal CSS color inheritance.
         with ui.header().classes("items-center justify-between px-4 py-1 text-white"):
             with ui.row().classes("items-center gap-2"):
-                ui.icon("insights").classes("text-2xl")
-                ui.label("npyquick serve").classes("text-lg font-medium")
+                ui.image(_ICON_PATH).classes("w-7 h-7").props("fit=contain")
+                ui.label("npyquick serve").classes("text-base font-semibold")
             with ui.row().classes("items-center gap-2"):
                 open_btn = ui.button("Open...", icon="folder_open", color=None).props("flat dense").classes("text-white")
                 pixel_size_btn = ui.button(
@@ -132,7 +133,7 @@ def run_server(file: str | None, *, host: str, port: int) -> None:
             # a global page problem, and the desktop makes the same call
             # (setTabEnabled + auto-switch away, never a modal/banner for
             # this specific case — see app.py's _set_tabs_enabled).
-            with ui.tabs().classes("w-full").props("dense") as view_tabs:
+            with ui.tabs().classes("w-full").props("dense indicator-color=accent") as view_tabs:
                 tab_image = ui.tab("image", label="Image")
                 tab_histogram = ui.tab("histogram", label="Histogram")
                 tab_lineplot = ui.tab("lineplot", label="Line Plot")
@@ -521,4 +522,7 @@ def run_server(file: str | None, *, host: str, port: int) -> None:
             await ui.context.client.connected()
             await open_picker()
 
-    ui.run(host=host, port=port, title="npyquick serve", reload=False, show=False)
+    ui.run(
+        host=host, port=port, title="npyquick serve", favicon=_ICON_PATH,
+        reload=False, show=False,
+    )
