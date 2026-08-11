@@ -39,7 +39,7 @@ Issues = "https://github.com/LiukDiihMieu/npyquick/issues"
 
 [project.optional-dependencies]
 dev = ["pytest>=7.0"]
-serve = ["nicegui>=2.0", "plotly>=5.20"]
+serve = ["nicegui>=3.0", "plotly>=5.20"]
 
 [project.scripts]
 npyquick = "npyquick.main:main"

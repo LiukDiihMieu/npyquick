@@ -3,20 +3,46 @@
 
 """A directory browser dialog for picking a .npy/.npz file on the remote
 machine's filesystem — there's no local file input to fall back on, since the
-browser is remote from where the files actually live. Adapted from NiceGUI's
-own documented `local_file_picker` example (a `ui.dialog` subclass + a
-`ui.aggrid` listing, resolved via `submit()`/`await` rather than a callback) —
-this gets row rendering and the dialog's own await-based result delivery for
-free instead of hand-rolling a button-per-row list plus a manual callback.
+browser is remote from where the files actually live.
+
+Built on ui.list/ui.item rather than the earlier ui.aggrid version: each
+row's on_click closure captures the Path object directly, computed
+server-side from our own directory listing — the browser only ever tells the
+server "item N was clicked", never a path string. That's a stronger boundary
+than accepting a client-supplied path and validating it after the fact:
+there's no path for a tampered/forged client event to supply in the first
+place, since none is ever sent. Filenames go through ui.item_label (plain
+text interpolation — confirmed via a throwaway probe page that
+"<img onerror=...>"-style content renders as escaped literal text, not
+executed HTML) rather than the previous approach of interpolating raw
+filenames into an HTML string for ui.aggrid's html_columns.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 
-from nicegui import events, ui
+from nicegui import ui
 
 _SUFFIXES = (".npy", ".npz")
+
+
+def _list_dir(current_dir: Path) -> tuple[list[Path], list[Path], str | None]:
+    """Directories then .npy/.npz files under `current_dir`, both sorted
+    case-insensitively by name — or ([], [], message) if the directory
+    can't be listed. Framework-neutral (no NiceGUI/ui element involved), so
+    this is unit-testable directly without mounting a browser."""
+    try:
+        entries = list(current_dir.iterdir())
+    except OSError as exc:
+        return [], [], f"Can't list this directory: {exc}"
+
+    dirs = sorted((e for e in entries if e.is_dir()), key=lambda p: p.name.lower())
+    files = sorted(
+        (e for e in entries if e.is_file() and e.suffix.lower() in _SUFFIXES),
+        key=lambda p: p.name.lower(),
+    )
+    return dirs, files, None
 
 
 class FilePicker(ui.dialog):
@@ -25,71 +51,49 @@ class FilePicker(ui.dialog):
         self._current_dir = Path(start_dir).resolve()
         if not self._current_dir.is_dir():
             self._current_dir = self._current_dir.parent
-        # Wherever browsing STARTS also serves as the upper bound on where it
-        # can go — that's already the file's own directory when one was given
-        # on the command line, or the process's cwd otherwise (see cli.py).
-        # No separate "root" concept/flag: exposing this dialog to a whole
-        # filesystem via ".." was a real gap (this app can be pointed at a
-        # non-loopback --host), and defining the boundary as "whatever this
-        # instance was already anchored to" closes it with no new parameter
-        # and no case where the boundary and the starting point disagree.
+        # Wherever browsing starts also bounds how far up it can go — no
+        # separate --root flag, no case where the boundary and the starting
+        # point disagree (see git history for the fuller rationale). Reaching
+        # a symlink that points outside this tree is not specially blocked:
+        # doing so still requires descending through directories the user
+        # can already browse, which the listing already exposes regardless.
         self._root_dir = self._current_dir
 
         with self, ui.card().classes("w-full max-w-2xl"):
             self.path_label = ui.label().classes("text-sm text-gray-500")
-            # html_columns=[0]: row names carry a "📁 <strong>" prefix for
-            # directories, same as the upstream example, to visually
-            # distinguish them from files without a second column. No
-            # rowSelection: we only ever act on cellDoubleClicked (navigate or
-            # pick), never read getSelectedRows(), so AG Grid's default
-            # per-row + select-all checkbox column (which rowSelection would
-            # otherwise render) would be pure clutter with no function.
-            self.grid = ui.aggrid({
-                "columnDefs": [{"field": "name", "headerName": ""}],
-                "headerHeight": 0,
-            }, html_columns=[0]).classes("w-full").style("height: 24rem")
-            self.grid.on("cellDoubleClicked", self._handle_double_click)
             self.error_label = ui.label().classes("text-red-500")
             self.error_label.set_visibility(False)
+            self.list_column = ui.column().classes("w-full gap-0").style("height: 24rem; overflow-y: auto")
             with ui.row().classes("w-full justify-end"):
                 ui.button("Cancel", on_click=self.close)
 
-        self._update_grid()
+        self._render()
 
-    def _update_grid(self) -> None:
+    def _enter(self, path: Path) -> None:
+        self._current_dir = path
+        self._render()
+
+    def _render(self) -> None:
         self.path_label.text = str(self._current_dir)
         self.error_label.set_visibility(False)
+        self.list_column.clear()
 
-        try:
-            entries = list(self._current_dir.iterdir())
-        except OSError as exc:
-            self.error_label.text = f"Can't list this directory: {exc}"
+        dirs, files, message = _list_dir(self._current_dir)
+        if message:
+            self.error_label.text = message
             self.error_label.set_visibility(True)
-            entries = []
 
-        dirs = sorted((e for e in entries if e.is_dir()), key=lambda p: p.name.lower())
-        files = sorted(
-            (e for e in entries if e.is_file() and e.suffix.lower() in _SUFFIXES),
-            key=lambda p: p.name.lower(),
-        )
+        with self.list_column, ui.list().props("separator").classes("w-full"):
+            if self._current_dir != self._root_dir:
+                self._row("arrow_upward", "..", on_click=lambda: self._enter(self._current_dir.parent))
+            for d in dirs:
+                self._row("folder", d.name, on_click=lambda p=d: self._enter(p))
+            for f in files:
+                self._row("description", f.name, on_click=lambda p=f: self.submit(str(p)))
 
-        rows = []
-        if self._current_dir != self._root_dir:
-            rows.append({"name": "⬆ <strong>..</strong>", "path": str(self._current_dir.parent)})
-        rows += [{"name": f"📁 <strong>{d.name}</strong>", "path": str(d)} for d in dirs]
-        rows += [{"name": f"📄 {f.name}", "path": str(f)} for f in files]
-
-        # Mutate the existing options dict in place rather than replacing it
-        # wholesale — see serve/views/table.py's docstring for why: AG Grid's
-        # Vue wrapper looks up options.theme on every (re)mount, and a bare
-        # `self.grid.options = {...}` would drop it and crash the grid dead.
-        self.grid.options["rowData"] = rows
-        self.grid.update()
-
-    def _handle_double_click(self, e: events.GenericEventArguments) -> None:
-        path = Path(e.args["data"]["path"])
-        if path.is_dir():
-            self._current_dir = path
-            self._update_grid()
-        else:
-            self.submit(str(path))
+    def _row(self, icon: str, label: str, *, on_click) -> None:
+        with ui.item(on_click=on_click):
+            with ui.item_section().props("avatar"):
+                ui.icon(icon)
+            with ui.item_section():
+                ui.item_label(label)
