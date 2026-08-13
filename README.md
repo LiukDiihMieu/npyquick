@@ -80,6 +80,28 @@ npyquick path/to/file.npz       # open a multi-array archive
 
 Files can be opened via **File › Open** (`Ctrl+O`) or by **dragging and dropping** onto the window.
 
+## Experimental web viewer
+
+The desktop application remains the primary and recommended way to use npyquick. An optional web viewer is available as an experimental convenience for users who occasionally need to inspect remote `.npy` or `.npz` files in a browser.
+
+The web viewer implements most of the desktop viewer's core functionality, but it may still contain bugs, is not guaranteed to provide complete feature parity, and may not immediately follow every desktop update.
+
+Install the optional dependencies:
+
+```bash
+pip install "npyquick[serve]"
+```
+
+Start the viewer:
+
+```bash
+npyquick serve path/to/file.npy
+```
+
+Run `npyquick serve --help` for the available command-line options.
+
+![Experimental npyquick web viewer](https://raw.githubusercontent.com/LiukDiihMieu/npyquick/main/docs/assets/screenshot-serve.png)
+
 ## Features
 
 ### Image view
