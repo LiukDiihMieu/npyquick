@@ -13,6 +13,8 @@ npyquick supports:
 
 For `.npz` files, the GUI shows a key selector listing each array's name, shape, and dtype. Selecting a different key reloads the current view using that array.
 
+Object arrays (`dtype=object`) are not supported. NumPy stores them with pickle, and reading a pickle can run arbitrary code from the file, so npyquick refuses to load them.
+
 ## View selection
 
 npyquick provides four main views:
@@ -161,7 +163,6 @@ Examples include:
 
 * higher-dimensional arrays
 * complex arrays that are not 2D
-* object arrays
 * scalar arrays
 * empty arrays
 * unsupported image-like shapes

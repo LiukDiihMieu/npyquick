@@ -102,7 +102,7 @@ Display 1D signals and paired `(x, y)` arrays with interactive zoom, pan, reset,
 
 ### Table view
 
-Fallback preview for arrays that are not naturally displayed as images or line plots, including higher-dimensional, object, scalar, or empty arrays.
+Fallback preview for arrays that are not naturally displayed as images or line plots, including higher-dimensional, scalar, or empty arrays. Object arrays (`dtype=object`) are not supported.
 
 ![Table view](https://raw.githubusercontent.com/LiukDiihMieu/npyquick/main/docs/assets/screenshot-table.png)
 
