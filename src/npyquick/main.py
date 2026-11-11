@@ -41,6 +41,11 @@ def main() -> None:
         help="Remove the .npy / .npz desktop integration (Linux only)",
     )
     parser.add_argument(
+        "--self-test", nargs="?", const="", default=None, metavar="REPORT",
+        help="Check that this installation works, print a report and exit. "
+             "The report is also written to the file REPORT if given.",
+    )
+    parser.add_argument(
         "file", nargs="?", help="Path to a .npy or .npz file to open on launch"
     )
     args, qt_argv = parser.parse_known_args()
@@ -56,6 +61,10 @@ def main() -> None:
     app = QApplication([sys.argv[0]] + qt_argv)
     app.setApplicationName("npyquick")
     app.setWindowIcon(app_icon())
+
+    if args.self_test is not None:
+        from npyquick.selftest import run
+        sys.exit(run(report_path=args.self_test))
     # Pair the window with our desktop file so compositors show the right
     # taskbar/dock icon. Must match the installed <id>.desktop basename.
     app.setDesktopFileName("io.github.liukdiihmieu.npyquick")

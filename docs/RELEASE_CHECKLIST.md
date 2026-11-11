@@ -14,6 +14,14 @@ verification of what CI produced (and the recipe if you ever build locally).
 - [ ] Tests pass.
 - [ ] README install/download instructions match the release.
 
+## Every package
+
+CI runs `npyquick --self-test` inside the AppImage, the Snap and the installed
+Windows program. It builds the window, loads a `.npy` and a `.npz`, and exports
+plots as PNG, SVG and PDF, so a resource, Qt plugin or matplotlib backend
+missing from a bundle fails the build. It cannot judge anything visual; the
+items below still need a person.
+
 ## Python package
 
 - [ ] `python -m build` succeeds.
@@ -53,6 +61,8 @@ Built and published manually (not by the tag CI), on an Ubuntu 22.04 host with L
 - [ ] Drag-and-drop works.
 - [ ] Installer runs without admin.
 - [ ] Start Menu shortcut works.
+- [ ] The npyquick icon shows in the title bar, on the taskbar button and on the Start Menu shortcut (CI cannot see this).
+- [ ] In Explorer's list view, an associated `.npy` file shows the small bracket icon rather than a blur.
 - [ ] Optional `.npy/.npz` association works if selected.
 - [ ] Silent install and uninstall work.
 - [ ] Uninstall removes Start Menu shortcut and app directory.
