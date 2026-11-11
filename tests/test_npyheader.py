@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from npyquick.core.npyheader import peek_npy, peek_npz, read_npy_header
+from npyquick.core.npyheader import is_npz, peek_npy, peek_npz, read_npy_header
 
 
 def test_read_npy_header_from_stream(tmp_path):
@@ -61,3 +61,21 @@ def test_peek_npz_keys_match_npzfile(tmp_path):
     with np.load(str(p)) as f:
         for key in metas:
             assert f[key].shape == metas[key].shape
+
+
+def test_is_npz_reads_content_not_extension(tmp_path):
+    npy = tmp_path / "a.npz"   # deliberately wrong extensions
+    npz = tmp_path / "b.npy"
+    np.save(tmp_path / "a.npy", np.zeros(3))
+    (tmp_path / "a.npy").rename(npy)
+    np.savez(tmp_path / "b.npz", x=np.zeros(3))
+    (tmp_path / "b.npz").rename(npz)
+
+    assert is_npz(str(npz)) is True
+    assert is_npz(str(npy)) is False
+
+
+def test_is_npz_true_for_empty_archive(tmp_path):
+    p = tmp_path / "empty.npz"
+    np.savez(p)  # no members: the file starts with the end-of-directory record
+    assert is_npz(str(p)) is True
