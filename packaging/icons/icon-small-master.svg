@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  npyquick small-size application icon, used for the 16 / 20 / 24 px entries
+  of the .ico files (see packaging/icons/build_icons.py).
+
+  The full icon's 4 x 4 grid and fox turn to mush below about 32 px, so this
+  keeps only the idea: array brackets around a 2 x 2 matrix, with two cells in
+  the fox's orange. It is drawn on a 16-unit grid; keep edges on half or whole
+  units so they stay crisp at 16 px.
+
+  Colours here match the application icon. The data-role attribute tells the
+  build script which colour each shape takes (a "-stroke" suffix means the
+  colour applies to the outline rather than the fill).
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16">
+  <g id="icon-small">
+    <rect data-role="plate" fill="#fff3e6" x="0.5" y="0.5" width="15" height="15" rx="3.2" ry="3.2" />
+    <rect data-role="plate-border-stroke" fill="none" stroke="#ecd3b8" stroke-width="0.5" x="0.5" y="0.5" width="15" height="15" rx="3.2" ry="3.2" />
+    <!-- Array brackets -->
+    <path data-role="brace-stroke" fill="none" stroke="#1f2d44" stroke-width="1.3" stroke-linejoin="round"
+          d="M 4.2,3 H 2 V 13 H 4.2 M 11.8,3 H 14 V 13 H 11.8" />
+    <!-- 2 x 2 matrix: 3-unit cells, 0.5-unit gap -->
+    <rect data-role="cell" fill="#e8c9a6" x="4.75" y="4.75" width="3" height="3" />
+    <rect data-role="fox" fill="#fe721b" x="8.25" y="4.75" width="3" height="3" />
+    <rect data-role="fox" fill="#fe721b" x="4.75" y="8.25" width="3" height="3" />
+    <rect data-role="cell" fill="#e8c9a6" x="8.25" y="8.25" width="3" height="3" />
+  </g>
+</svg>

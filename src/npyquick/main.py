@@ -5,11 +5,24 @@ from __future__ import annotations
 
 import argparse
 import sys
+from importlib.resources import files
 
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication
 
 from npyquick import __version__
 from npyquick.app import MainWindow
+
+
+def app_icon() -> QIcon:
+    """The window icon, loaded from the multi-size .ico shipped in the package.
+
+    Without this the title bar and taskbar show a generic icon: the icon
+    embedded in the Windows .exe only covers shortcuts and the file itself,
+    and on Linux a window gets its icon from a .desktop file, which a plain
+    pip install does not have.
+    """
+    return QIcon(str(files("npyquick") / "resources" / "icon.ico"))
 
 
 def main() -> None:
@@ -42,6 +55,7 @@ def main() -> None:
 
     app = QApplication([sys.argv[0]] + qt_argv)
     app.setApplicationName("npyquick")
+    app.setWindowIcon(app_icon())
     # Pair the window with our desktop file so compositors show the right
     # taskbar/dock icon. Must match the installed <id>.desktop basename.
     app.setDesktopFileName("io.github.liukdiihmieu.npyquick")
