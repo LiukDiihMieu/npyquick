@@ -8,11 +8,18 @@ read and write under the sandbox.
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 
 import pytest
 
 from npyquick import desktop
+
+# The module under test is only reachable on Linux (main() refuses
+# --install-desktop elsewhere), and these tests assert POSIX paths.
+pytestmark = pytest.mark.skipif(
+    sys.platform != "linux", reason="desktop integration is Linux-only"
+)
 
 
 # ---------------------------------------------------------------------------
