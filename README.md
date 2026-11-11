@@ -26,7 +26,9 @@ npyquick is designed as a small, practical viewer for this job:
 * stay lightweight and easy to understand
 * avoid turning a simple array viewer into a full image-processing application
 
-<video src="https://github.com/user-attachments/assets/678de9e3-45c3-4b20-ba3a-f8350ad4d89d" autoplay loop muted playsinline width="800"></video>
+<p align="center">
+  <img alt="Dragging a .npy file onto the npyquick window opens it right away" src="https://raw.githubusercontent.com/LiukDiihMieu/npyquick/main/docs/assets/demo.gif" width="800">
+</p>
 
 ## Installation
 
