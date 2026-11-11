@@ -34,6 +34,21 @@ def read_npy_header(fp) -> tuple[tuple[int, ...], np.dtype]:
     return shape, dtype
 
 
+# Leading bytes of a zip archive: a regular one, and an empty one (which holds
+# only the end-of-central-directory record). Same check np.load uses.
+_ZIP_PREFIXES = (b"PK\x03\x04", b"PK\x05\x06")
+
+
+def is_npz(path: str) -> bool:
+    """Tell a .npz archive from a .npy file by its leading bytes.
+
+    The file extension is not reliable: it may be upper-case (``DATA.NPZ``),
+    missing, or simply wrong.
+    """
+    with open(path, "rb") as fp:
+        return fp.read(4) in _ZIP_PREFIXES
+
+
 def peek_npy(path: str) -> MemberMeta:
     """Read a .npy file's header only and return its metadata."""
     with open(path, "rb") as fp:

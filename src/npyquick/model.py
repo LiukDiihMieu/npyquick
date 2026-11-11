@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 
 from .core import limits
-from .core.npyheader import MemberMeta, peek_npy, peek_npz
+from .core.npyheader import MemberMeta, is_npz, peek_npy, peek_npz
 
 
 class NpyDataModel:
@@ -17,7 +17,7 @@ class NpyDataModel:
         self._selected_key: str = ""
 
     def load(self, path: str) -> None:
-        if path.endswith(".npz"):
+        if is_npz(path):
             metas = peek_npz(path)
             if not metas:
                 raise ValueError("NPZ archive contains no arrays")

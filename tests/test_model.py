@@ -112,3 +112,34 @@ def test_empty_npz_does_not_pollute_previous_state(tmp_path):
 
     assert m.path == prev_path
     np.testing.assert_array_equal(m.array, prev_array)
+
+
+# ----------------------------------------------------------------------
+# Format detection — by file content, not by extension.
+# ----------------------------------------------------------------------
+
+@pytest.mark.parametrize("name", ["DATA.NPZ", "data.Npz", "noext", "mislabelled.npy"])
+def test_npz_detected_regardless_of_extension(tmp_path, name):
+    saved = tmp_path / "src.npz"
+    np.savez(saved, x=np.ones((3, 3)), y=np.arange(6))
+    p = tmp_path / name
+    saved.rename(p)
+
+    m = NpyDataModel()
+    m.load(str(p))
+    assert set(m.available_array_meta()) == {"x", "y"}
+    m.select_array("y")
+    np.testing.assert_array_equal(m.array, np.arange(6))
+
+
+@pytest.mark.parametrize("name", ["DATA.NPY", "noext", "mislabelled.npz"])
+def test_npy_detected_regardless_of_extension(tmp_path, name):
+    arr = np.arange(12).reshape(3, 4)
+    saved = tmp_path / "src.npy"
+    np.save(saved, arr)
+    p = tmp_path / name
+    saved.rename(p)
+
+    m = NpyDataModel()
+    m.load(str(p))
+    np.testing.assert_array_equal(m.array, arr)
