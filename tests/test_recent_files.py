@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import sys
 
 import numpy as np
 import pytest
@@ -78,10 +79,13 @@ def test_menu_entry_loads_the_file(main_window, write_npy):
 
 def test_home_paths_are_abbreviated_with_tilde(main_window, write_npy, monkeypatch):
     path = write_npy(np.zeros((2, 2)), name="deep.npy")
-    monkeypatch.setenv("HOME", os.path.dirname(path))  # treat tmp_path as home
+    # Treat tmp_path as home. os.path.expanduser reads HOME on POSIX and
+    # USERPROFILE on Windows.
+    monkeypatch.setenv("HOME", os.path.dirname(path))
+    monkeypatch.setenv("USERPROFILE", os.path.dirname(path))
     main_window.load_file(path)
     entry = _menu_actions(main_window)[0]
-    assert entry.text() == "~/deep.npy"
+    assert entry.text() == os.path.join("~", "deep.npy")
     assert entry.toolTip() == os.path.abspath(path)
 
 
@@ -115,6 +119,7 @@ def test_greyed_entry_explains_snap_sandbox(main_window, write_npy, monkeypatch)
     assert "File > Open" in entry.toolTip()
 
 
+@pytest.mark.skipif(sys.platform != "linux", reason="XDG document portal paths exist only on Linux")
 def test_portal_document_paths_are_not_recorded(main_window):
     main_window._add_recent_file("/run/user/1000/doc/abc123/data.npy")
     assert main_window._recent_files() == []
@@ -141,4 +146,5 @@ def test_empty_stored_list_reads_back_as_empty(main_window):
     QSettings("npyquick", "npyquick").setValue("recent_files", [])
     assert main_window._recent_files() == []
     main_window._add_recent_file("/tmp/after_clear.npy")  # must not raise
-    assert main_window._recent_files() == ["/tmp/after_clear.npy"]
+    # Entries are stored as absolute paths, which gain a drive letter on Windows.
+    assert main_window._recent_files() == [os.path.abspath("/tmp/after_clear.npy")]
