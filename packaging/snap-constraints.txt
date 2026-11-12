@@ -1,0 +1,11 @@
+# Version limits applied when building the Snap only (snap/snapcraft.yaml,
+# python-constraints). They do not affect pip installs, the AppImage or the
+# Windows build.
+
+# Qt 6.12 made a sandboxed Wayland application receive dragged files through
+# the desktop portal's file transfer instead of as plain paths. Inside the
+# strict snap that yields no file at all: dragging a .npy onto the window is
+# refused (0.1.5 revision 7, built with 6.12.0; 0.1.4, built with an earlier
+# Qt, is fine, as are the snap on X11 and the unsandboxed AppImage on
+# Wayland). Stay on 6.11 until that works.
+PySide6-Essentials<6.12
