@@ -10,9 +10,11 @@ verification of what CI produced (and the recipe if you ever build locally).
 
 - [ ] `main` is clean and up to date.
 - [ ] Version is bumped in `src/npyquick/__init__.py` (`__version__`; the single source — `pyproject.toml` reads it via `[tool.hatch.version]`).
-- [ ] No stale version strings in packaging scripts (e.g. the AppStream `<release>` in `packaging/appimage/*.appdata.xml`).
+- [ ] The AppStream metainfo (`packaging/appimage/*.appdata.xml`) has a `<release>` entry for this version. The Snap takes its version from it. The release workflow refuses a tag that disagrees with either.
+- [ ] `CHANGELOG.md` has a section for this version.
 - [ ] Tests pass.
 - [ ] README install/download instructions match the release.
+- [ ] The packages built by CI from the release commit have been tried by hand. The `tests` workflow run for that commit keeps the AppImage and the Windows installer as artifacts for 7 days; download them from the run's page. Do this before tagging: the PyPI upload that a tag triggers cannot be undone.
 
 ## Every package
 
@@ -40,17 +42,18 @@ items below still need a person.
 
 ## Linux Snap
 
-Built and published manually (not by the tag CI), on an Ubuntu 22.04 host with LXD.
+Pushing the tag runs `.github/workflows/snap.yml`: it builds the snap, self-tests it, and then waits for approval of the `snap-store` environment before uploading to the **edge** channel. Promotion to stable stays manual. The same workflow can be started by hand from the Actions tab to try a build before tagging; nothing is uploaded unless the approval is given.
 
-- [ ] `snapcraft pack --use-lxd` builds the `.snap` (version is adopted from the AppStream `<release>`).
-- [ ] Installs with `sudo snap install --dangerous`.
+To build locally instead: `snapcraft pack --use-lxd`, then `sudo snap install --dangerous <file>`.
+
+- [ ] The workflow's build job passed, including `--self-test`.
+- [ ] The upload to edge was approved, and `sudo snap refresh npyquick --edge` installs this version.
 - [ ] `.npy` and `.npz` sample files open across the image / table / cross-section / histogram views.
 - [ ] Launches from the application menu with the correct icon.
 - [ ] Works on both X11 and Wayland sessions (the Qt xcb path needs the staged xcb/xkb libs).
 - [ ] A file outside the sandbox (e.g. on another drive) shows the sandbox hint, not a raw error.
-- [ ] Uploaded to the edge channel: `snapcraft upload --release=edge ...`.
-- [ ] After edge verification, promoted to stable: `snapcraft release npyquick <rev> stable`.
-- [ ] Store text/icon updated with `snapcraft upload-metadata <snap> --force`; links and screenshots set in the web dashboard.
+- [ ] After edge verification, promoted to stable: `snapcraft release npyquick <rev> stable`. Installed snaps update themselves from stable within days, so this reaches every existing user.
+- [ ] Store listing updated. Uploading a revision does not change it: push text and icon with `snapcraft upload-metadata <snap> --force`, and set screenshots, links and categories in the web dashboard.
 
 ## Windows installer
 
@@ -73,5 +76,6 @@ Built and published manually (not by the tag CI), on an Ubuntu 22.04 host with L
 
 - [ ] Tag is created from the final release commit.
 - [ ] GitHub Release has the AppImage and Windows setup.exe attached (GitHub shows a SHA-256 digest per asset).
-- [ ] PyPI upload succeeds.
-- [ ] Release notes mention major changes and known Windows SmartScreen warning.
+- [ ] PyPI upload succeeds (it runs only after both binaries have built).
+- [ ] The PyPI project page shows the new README correctly; it only changes with a release.
+- [ ] Release notes mention major changes and known Windows SmartScreen warning. Start from the version's section in `CHANGELOG.md`.

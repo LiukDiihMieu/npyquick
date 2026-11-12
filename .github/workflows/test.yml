@@ -125,6 +125,15 @@ jobs:
           "$appimage" --version
           "$appimage" --self-test
 
+      # Kept for a few days so a build can be downloaded and tried by hand
+      # before a release is tagged (icons, file association, look and feel).
+      - name: Upload the AppImage
+        uses: actions/upload-artifact@v4
+        with:
+          name: appimage
+          path: dist/npyquick-*.AppImage
+          retention-days: 7
+
   # Build the Windows installer from the shared wheel, then silently install it
   # (no admin — the installer is PrivilegesRequired=lowest) and run the result.
   windows-smoke:
@@ -168,3 +177,10 @@ jobs:
             -ArgumentList '--self-test', $report
           if (Test-Path $report) { Get-Content $report }
           if ($run.ExitCode -ne 0) { throw "self-test failed with exit code $($run.ExitCode)" }
+
+      - name: Upload the installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: dist/npyquick-*-setup.exe
+          retention-days: 7

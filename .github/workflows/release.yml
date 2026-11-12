@@ -22,6 +22,23 @@ jobs:
           pip install build
           python -m build
 
+      # A tag that disagrees with the package would ship binaries named after
+      # one version under a release named after another, and PyPI uploads
+      # cannot be taken back. The Snap takes its version from the AppStream
+      # <release> entry, so that has to name this version too.
+      - name: Check the tag matches the package and AppStream versions
+        run: |
+          version=$(ls dist/npyquick-*.whl | sed -E 's/.*npyquick-([^-]+)-.*/\1/')
+          echo "package version: $version, tag: $GITHUB_REF_NAME"
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match package version $version (src/npyquick/__init__.py)."
+            exit 1
+          fi
+          if ! grep -q "<release version=\"$version\"" packaging/appimage/io.github.liukdiihmieu.npyquick.appdata.xml; then
+            echo "::error::No <release version=\"$version\"> entry in the AppStream metainfo; the Snap would be versioned wrongly."
+            exit 1
+          fi
+
       - name: Upload dist artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -30,8 +47,10 @@ jobs:
 
   # Publish the shared dist to PyPI via Trusted Publishing (OIDC, no token).
   # No checkout/build here: it only needs the artifacts, nothing else.
+  # Waits for both binaries: a PyPI upload is permanent, so do not publish a
+  # version whose AppImage or installer then fails to build.
   publish-pypi:
-    needs: build-dist
+    needs: [build-dist, appimage, windows-exe]
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
