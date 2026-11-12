@@ -39,6 +39,25 @@ parts:
   npyquick:
     plugin: python
     source: .
+    # Workaround for https://github.com/canonical/snapcraft/issues/6549
+    # (open as of 2026-11-12; reported against snapcraft 9.2.1 with core24 and
+    # core26).
+    #
+    # By default the plugin upgrades pip, setuptools and wheel in the build
+    # venv. The gnome extension puts the SDK's own dist-packages, which hold
+    # another pip, ahead of the venv on PYTHONPATH. So the pip launcher script
+    # written by the upgrade imports the SDK's pip module instead of its own.
+    # That mismatch was harmless until pip 26.3 renamed its entry point; since
+    # then the build stops with:
+    #   ImportError: cannot import name 'cli' from 'pip._internal.cli.main'
+    #
+    # Leaving pip out of the list keeps the venv's bundled pip, whose launcher
+    # agrees with the SDK's module. Upstream suggests pinning `pip<26.3`
+    # through a constraints file instead; this does the same with less. Once
+    # the issue is fixed, this key can go and the default returns.
+    python-packages:
+      - setuptools
+      - wheel
     stage-packages:
       # System libraries the Qt6 xcb (X11) platform plugin links against. The
       # gnome platform supplies some xcb libs but not all of these; without them
