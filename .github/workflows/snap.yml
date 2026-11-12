@@ -26,10 +26,13 @@ jobs:
         id: snapcraft
 
       # Catch "builds but won't run" before it can reach the store.
+      # --self-test goes past --version: it builds the window, loads files and
+      # exports plots from inside the snap. Offscreen, as the runner has no display.
       - name: Smoke-test the snap
         run: |
           sudo snap install --dangerous ${{ steps.snapcraft.outputs.snap }}
           npyquick --version
+          QT_QPA_PLATFORM=offscreen npyquick --self-test
 
       - name: Upload the snap
         uses: actions/upload-artifact@v4

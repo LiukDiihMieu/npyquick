@@ -224,6 +224,8 @@ Double-clicking then works for files in your home folder (and connected removabl
 
 Bug reports, feature requests, and suggestions are welcome — please open an [issue](https://github.com/LiukDiihMieu/npyquick/issues).
 
+If an installed copy misbehaves, `npyquick --self-test` checks that it can load files and export plots, and prints a short report worth attaching to the issue. The Windows build has no console, so pass a file name to get the report: `npyquick.exe --self-test report.txt`.
+
 > The code in this repository is primarily written by an AI coding agent and reviewed by a human maintainer.
 
 ## License

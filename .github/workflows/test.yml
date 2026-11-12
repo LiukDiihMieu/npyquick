@@ -112,10 +112,18 @@ jobs:
       - name: Build AppImage from the wheel
         run: bash packaging/appimage/build.sh dist/*.whl
 
+      # --version only proves the bundle starts. --self-test builds the window,
+      # loads files and exports plots from inside it, which is what catches a
+      # resource, Qt plugin or matplotlib backend missing from the bundle.
+      # The runner has no display, hence the offscreen platform.
       - name: Smoke-test the AppImage
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: "1"
+          QT_QPA_PLATFORM: offscreen
         run: |
           appimage=$(ls dist/npyquick-*.AppImage)
-          APPIMAGE_EXTRACT_AND_RUN=1 "$appimage" --version
+          "$appimage" --version
+          "$appimage" --self-test
 
   # Build the Windows installer from the shared wheel, then silently install it
   # (no admin — the installer is PrivilegesRequired=lowest) and run the result.
@@ -148,3 +156,15 @@ jobs:
           Start-Process -Wait -FilePath $exe `
             -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',"/DIR=$dir"
           & "$dir\npyquick.exe" --version
+
+      # npyquick.exe is a windowed program: it has no console to print to and
+      # PowerShell does not wait for it. So start it explicitly, wait, read the
+      # exit code, and take the report from a file.
+      - name: Self-test the installed program
+        shell: pwsh
+        run: |
+          $report = "$env:RUNNER_TEMP\self-test.txt"
+          $run = Start-Process -Wait -PassThru -FilePath "$env:RUNNER_TEMP\npyquick\npyquick.exe" `
+            -ArgumentList '--self-test', $report
+          if (Test-Path $report) { Get-Content $report }
+          if ($run.ExitCode -ne 0) { throw "self-test failed with exit code $($run.ExitCode)" }
