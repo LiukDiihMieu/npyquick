@@ -47,8 +47,11 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "Create a &desktop shortcut"; Flags: unchecked
-; Opt-in (default off): never change file associations unless the user asks.
-Name: "associate"; Description: "Associate .npy and .npz files with {#MyAppName}"; Flags: unchecked
+; On by default: opening a file by double-click is what a user expects after
+; installing a viewer. It stays a visible checkbox so they can decline. An
+; upgrade keeps whatever was chosen last time (Inno's UsePreviousTasks), so
+; existing installs that left it off are not switched on behind their back.
+Name: "associate"; Description: "Associate .npy and .npz files with {#MyAppName}"
 
 [Files]
 ; The PyInstaller onedir tree (npyquick.exe + _internal\...).
@@ -63,7 +66,7 @@ Name: "{group}\Uninstall {#MyAppName}"; Filename: "{uninstallexe}"
 Name: "{userdesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 
 [Registry]
-; File association, only when the "associate" task is checked. HKCU-only
+; File association, unless the "associate" task is unticked. HKCU-only
 ; (per-user, no admin, cannot affect other users or the system). Our own
 ; ProgIDs are removed wholesale on uninstall (uninsdeletekey); for the
 ; extension keys we delete only the value we wrote (uninsdeletevalue), never
