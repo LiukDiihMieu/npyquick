@@ -80,6 +80,12 @@ jobs:
           name: dist
           path: dist/
 
+      # The pins in packaging/constraints.txt are resolved for Python 3.12, the
+      # version the Snap's base provides, so every package is built with it.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
       # build.sh copies libxcb-cursor from the host into the bundle (Qt >= 6.5
       # dlopens it), so it must be present on the runner.
       - name: Install libxcb-cursor for bundling
@@ -111,6 +117,12 @@ jobs:
         with:
           name: dist
           path: dist/
+
+      # The pins in packaging/constraints.txt are resolved for Python 3.12, the
+      # version the Snap's base provides, so every package is built with it.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
 
       # build.ps1 finds ISCC.exe in Inno Setup's standard install path, which is
       # where Chocolatey puts it. The runner doesn't ship it preinstalled.

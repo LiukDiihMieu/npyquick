@@ -58,10 +58,11 @@ parts:
     python-packages:
       - setuptools
       - wheel
-    # Holds Qt below 6.12, whose drag-and-drop does not work inside the snap
-    # on Wayland; the file explains.
+    # Exact versions of every dependency, shared with the AppImage and Windows
+    # builds. Generated from packaging/requirements.in, which also explains
+    # the one deliberate limit (Qt below 6.12).
     python-constraints:
-      - packaging/snap-constraints.txt
+      - packaging/constraints.txt
     stage-packages:
       # System libraries the Qt6 xcb (X11) platform plugin links against. The
       # gnome platform supplies some xcb libs but not all of these; without them

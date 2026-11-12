@@ -47,7 +47,9 @@ if [ -z "$WHEEL" ]; then
 fi
 echo ">> wheel: $WHEEL"
 
-"$VPY" -m pip install "$WHEEL" pyinstaller
+# Exact versions come from packaging/constraints.txt, shared with the Windows
+# and Snap builds, so all three ship the same dependencies.
+"$VPY" -m pip install -c packaging/constraints.txt "$WHEEL" pyinstaller
 
 # Read the version from the installed distribution's metadata (the standard
 # importlib.metadata API — reads .dist-info, never imports package code), so the
