@@ -39,6 +39,15 @@ parts:
   npyquick:
     plugin: python
     source: .
+    # The plugin upgrades pip, setuptools and wheel in the build venv by
+    # default. Leave pip out: the gnome extension puts the SDK's own
+    # dist-packages (with pip 24.0) ahead of the venv on PYTHONPATH, so an
+    # upgraded pip's launcher script ends up importing the SDK's older pip
+    # module. With pip 26 that fails outright ("cannot import name 'cli' from
+    # 'pip._internal.cli.main'"). The venv's bundled pip matches the SDK's.
+    python-packages:
+      - setuptools
+      - wheel
     stage-packages:
       # System libraries the Qt6 xcb (X11) platform plugin links against. The
       # gnome platform supplies some xcb libs but not all of these; without them
