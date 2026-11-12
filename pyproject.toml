@@ -9,6 +9,7 @@ description = "Quick GUI viewer for .npy / .npz arrays with image, table, and cr
 readme = "README.md"
 requires-python = ">=3.10"
 license = "GPL-3.0-or-later"
+keywords = ["numpy", "npy", "npz", "viewer", "array", "image", "visualization", "gui"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Programming Language :: Python :: 3",

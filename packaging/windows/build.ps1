@@ -50,7 +50,9 @@ try {
     }
     Write-Host ">> wheel: $Wheel"
 
-    & $VPy -m pip install $Wheel pyinstaller
+    # Exact versions come from packaging\constraints.txt, shared with the AppImage
+    # and Snap builds, so all three ship the same dependencies.
+    & $VPy -m pip install -c packaging\constraints.txt $Wheel pyinstaller
     # Read the version from the installed distribution's metadata (the standard
     # importlib.metadata API — reads .dist-info, never imports package code).
     $Version = (& $VPy -c "from importlib.metadata import version; print(version('npyquick'))").Trim()

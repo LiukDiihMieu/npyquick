@@ -102,6 +102,12 @@ jobs:
           name: dist
           path: dist/
 
+      # The pins in packaging/constraints.txt are resolved for Python 3.12, the
+      # version the Snap's base provides, so every package is built with it.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
       # libxcb-cursor0: build.sh bundles it. libegl1/libxkbcommon0: the bundled Qt
       # needs them on the host to import for the --version smoke.
       - name: Install build and runtime deps
@@ -147,6 +153,12 @@ jobs:
         with:
           name: dist
           path: dist/
+
+      # The pins in packaging/constraints.txt are resolved for Python 3.12, the
+      # version the Snap's base provides, so every package is built with it.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
 
       - name: Install Inno Setup
         run: choco install innosetup -y --no-progress

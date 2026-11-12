@@ -1,0 +1,34 @@
+# What the packaged builds (AppImage, Windows installer, Snap) need on top of
+# npyquick's own dependencies, plus the version limits chosen on purpose.
+#
+# This is the input. packaging/constraints.txt is generated from it and from
+# pyproject.toml, and pins every package to an exact version; the three builds
+# install with that file as a pip constraint, so they all ship the same
+# versions. A pip install of npyquick is not affected: pyproject.toml only
+# sets lower bounds.
+#
+# To move to newer versions, regenerate the file and review the diff:
+#
+#   uv pip compile pyproject.toml packaging/requirements.in \
+#       --universal --python-version 3.12 --upgrade \
+#       -o packaging/constraints.txt
+#
+# Do it at the start of a release cycle rather than just before a release, so
+# the new versions get some use first. The packaging CI then builds all three
+# and runs `npyquick --self-test` in each.
+
+pyinstaller
+
+# Qt 6.12 made a sandboxed Wayland application receive dragged files through
+# the desktop portal's file transfer instead of as plain paths. Inside the
+# strict snap that fails, and Qt's own fallback does not recover: dragging a
+# .npy onto the window is refused and the terminal shows
+#
+#   qt.qpa.wayland: Failed retrieving files, falling back to uris
+#
+# Seen in the first 0.1.5 snap, built with 6.12.0. The 0.1.4 snap, built with
+# an earlier Qt, was fine, as were the 0.1.5 snap on X11 and the unsandboxed
+# AppImage on Wayland. Only the snap needs this limit, but all three builds
+# share one set of versions. To re-test: remove the limit, regenerate, build
+# the snap, and drop a file on the window in a Wayland session.
+PySide6-Essentials<6.12
