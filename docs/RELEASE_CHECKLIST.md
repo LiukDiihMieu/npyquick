@@ -14,7 +14,7 @@ verification of what CI produced (and the recipe if you ever build locally).
 - [ ] `CHANGELOG.md` has a section for this version.
 - [ ] Tests pass.
 - [ ] README install/download instructions match the release.
-- [ ] The packages built by CI from the release commit have been tried by hand. The `tests` workflow run for that commit keeps the AppImage and the Windows installer as artifacts for 7 days; download them from the run's page. Do this before tagging: the PyPI upload that a tag triggers cannot be undone.
+- [ ] Optional: try the packages CI built from the release commit. The `tests` workflow run for that commit keeps the AppImage and the Windows installer as artifacts for 7 days; download them from the run's page.
 
 ## Every package
 
@@ -74,8 +74,11 @@ To build locally instead: `snapcraft pack --use-lxd`, then `sudo snap install --
 
 ## Release
 
+Pushing the tag builds everything and opens a draft GitHub Release, then stops: the PyPI upload and the Snap upload each wait for approval of their environment (`pypi`, `snap-store`). Nothing is public until those are approved, so this is the point to check the packages. If something is wrong, delete the tag and the draft, fix it, and tag again.
+
 - [ ] Tag is created from the final release commit.
-- [ ] GitHub Release has the AppImage and Windows setup.exe attached (GitHub shows a SHA-256 digest per asset).
-- [ ] PyPI upload succeeds (it runs only after both binaries have built).
+- [ ] The draft GitHub Release has the AppImage and Windows setup.exe attached (GitHub shows a SHA-256 digest per asset).
+- [ ] Those two packages have been installed and checked by hand (the per-package sections above) **before approving anything**. A PyPI upload cannot be undone.
+- [ ] `pypi` environment approved; the upload succeeds.
 - [ ] The PyPI project page shows the new README correctly; it only changes with a release.
 - [ ] Release notes mention major changes and known Windows SmartScreen warning. Start from the version's section in `CHANGELOG.md`.
