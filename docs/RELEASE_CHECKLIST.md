@@ -63,7 +63,8 @@ Built and published manually (not by the tag CI), on an Ubuntu 22.04 host with L
 - [ ] Start Menu shortcut works.
 - [ ] The npyquick icon shows in the title bar, on the taskbar button and on the Start Menu shortcut (CI cannot see this).
 - [ ] In Explorer's list view, an associated `.npy` file shows the small bracket icon rather than a blur.
-- [ ] Optional `.npy/.npz` association works if selected.
+- [ ] `.npy/.npz` association is ticked by default on a fresh install and works; unticking it leaves the file types alone.
+- [ ] Upgrading an install that had the association off keeps it off.
 - [ ] Silent install and uninstall work.
 - [ ] Uninstall removes Start Menu shortcut and app directory.
 - [ ] Windows unsigned-build note is present in README/release notes.
