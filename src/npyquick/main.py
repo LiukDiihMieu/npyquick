@@ -26,6 +26,11 @@ def app_icon() -> QIcon:
 
 
 def main() -> None:
+    if len(sys.argv) > 1 and sys.argv[1] == "serve":
+        from npyquick.serve.cli import main as serve_main
+        serve_main(sys.argv[2:])
+        return
+
     parser = argparse.ArgumentParser(
         description="npyquick — a fast, lightweight viewer for NumPy arrays (.npy / .npz)"
     )
