@@ -72,6 +72,10 @@ To build locally instead: `snapcraft pack --use-lxd`, then `sudo snap install --
 - [ ] Uninstall removes Start Menu shortcut and app directory.
 - [ ] Windows unsigned-build note is present in README/release notes.
 
+## After a release
+
+- [ ] Refresh the pinned dependencies for the next cycle, so the new versions get some use before they ship. `packaging/requirements.in` has the command and the reasons for any deliberate limit. Review the diff of `packaging/constraints.txt`, open a pull request, and let the packaging CI build and self-test all three packages.
+
 ## Release
 
 Pushing the tag builds everything and opens a draft GitHub Release, then stops: the PyPI upload and the Snap upload each wait for approval of their environment (`pypi`, `snap-store`). Nothing is public until those are approved, so this is the point to check the packages. If something is wrong, delete the tag and the draft, fix it, and tag again.
