@@ -8,9 +8,11 @@ wheel -> clean venv -> PyInstaller (onedir) -> Inno Setup, producing
 dist\npyquick-<ver>-setup.exe. Run from anywhere; paths resolve to the repo root.
 
 .PARAMETER Python
-Interpreter used to create the build venv (default: python). Use a clean
-python.org install, NOT conda — conda's C-extensions link against conda libs and
-can break the frozen app (the same lesson as the AppImage build).
+Interpreter used to create the build venv (default: python). It has to be
+Python 3.12: packaging\constraints.txt pins versions resolved for it, and the
+script stops if it finds another version. Use a clean python.org install, NOT
+conda — conda's C-extensions link against conda libs and can break the frozen
+app (the same lesson as the AppImage build).
 
 .PARAMETER Wheel
 Optional prebuilt npyquick wheel to bundle. If omitted, one is built with
@@ -33,6 +35,16 @@ $ErrorActionPreference = "Stop"
 
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 Set-Location $RepoRoot
+
+# The Python the pinned dependencies are resolved for. Keep in step with the
+# --python-version used to generate packaging\constraints.txt.
+$RequiredPython = "3.12"
+$FoundPython = & $Python -c "import sys; print('%d.%d' % sys.version_info[:2])"
+if ($FoundPython -ne $RequiredPython) {
+    throw ("'$Python' is Python $FoundPython, but this build needs $RequiredPython " +
+           "(the pins in packaging\constraints.txt are resolved for it). " +
+           "Pass -Python with a Python $RequiredPython interpreter.")
+}
 
 $Work = Join-Path $env:TEMP ("npyquick-build-" + [guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Force -Path $Work | Out-Null

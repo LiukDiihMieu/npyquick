@@ -9,9 +9,12 @@
 #        AppImage and the PyPI release come from the same wheel.
 #
 # Env overrides:
-#   PYTHON         interpreter for the build venv (default: python3). Must NOT be
-#                  a conda Python — conda's C-extensions link against conda libs
-#                  and break in the bundle (e.g. pyexpat undefined symbols).
+#   PYTHON         interpreter for the build venv (default: python3.12). It has
+#                  to be Python 3.12: packaging/constraints.txt pins versions
+#                  resolved for it, and an older Python (Ubuntu 22.04's python3
+#                  is 3.10) cannot install them. Must NOT be a conda Python —
+#                  conda's C-extensions link against conda libs and break in
+#                  the bundle (e.g. pyexpat undefined symbols).
 #   APPIMAGETOOL   path to an existing appimagetool; if unset, it is downloaded.
 #   OUTPUT         output path (default: dist/npyquick-<arch>.AppImage).
 set -euo pipefail
@@ -19,7 +22,22 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$REPO_ROOT"
 
-PYTHON="${PYTHON:-python3}"
+# The Python the pinned dependencies are resolved for. Keep in step with the
+# --python-version used to generate packaging/constraints.txt.
+REQUIRED_PYTHON="3.12"
+PYTHON="${PYTHON:-python$REQUIRED_PYTHON}"
+if ! command -v "$PYTHON" >/dev/null 2>&1; then
+    echo ">> ERROR: '$PYTHON' not found. This build needs Python $REQUIRED_PYTHON;" \
+         "install it, or point PYTHON at one." >&2
+    exit 1
+fi
+found_python="$("$PYTHON" -c 'import sys; print("%d.%d" % sys.version_info[:2])')"
+if [ "$found_python" != "$REQUIRED_PYTHON" ]; then
+    echo ">> ERROR: '$PYTHON' is Python $found_python, but this build needs" \
+         "$REQUIRED_PYTHON (the pins in packaging/constraints.txt are resolved for it)." \
+         "Set PYTHON to a Python $REQUIRED_PYTHON interpreter." >&2
+    exit 1
+fi
 ARCH="${ARCH:-x86_64}"
 # OUTPUT is resolved after the wheel is installed (below), so its default name
 # can carry the package version — matching the Windows installer's naming.
