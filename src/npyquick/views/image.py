@@ -7,7 +7,8 @@ from collections.abc import Callable
 import numpy as np
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
-from PySide6.QtCore import Qt, QSettings
+from matplotlib.layout_engine import LayoutEngine
+from PySide6.QtCore import QEvent, Qt, QSettings
 from PySide6.QtWidgets import (
     QHBoxLayout, QLabel, QLineEdit, QPushButton, QSizePolicy, QSplitter,
     QVBoxLayout, QWidget,
@@ -100,10 +101,15 @@ class ImageCanvas(ExportableMixin, FigureCanvas):
     panel_name = "Image"
 
     def __init__(self, profile: ProfileCanvas | None = None) -> None:
+        self._drag_layouts: dict[FigureCanvas, LayoutEngine | None] = {}
+        self._drag_background = None
         self._fig = Figure(layout="compressed")
         super().__init__(self._fig)
         self._ax = self._fig.add_subplot(111)
         self._profile = profile
+        self._drag_canvases: tuple[FigureCanvas, ...] = (
+            (self, profile) if profile is not None else (self,)
+        )
         self._on_status: Callable = lambda _: None
         # Hooks for the complex dual-panel mode (no-ops in the single-canvas
         # real path, so ImageView behaves exactly as before). _on_view_changed
@@ -131,6 +137,7 @@ class ImageCanvas(ExportableMixin, FigureCanvas):
         self.mpl_connect("button_release_event", self._on_release)
         self.mpl_connect("scroll_event", self._on_scroll)
         self.mpl_connect("axes_leave_event", self._on_axes_leave)
+        self.mpl_connect("draw_event", self._cache_drag_background)
 
     def set_on_status(self, cb: Callable) -> None:
         self._on_status = cb
@@ -138,6 +145,7 @@ class ImageCanvas(ExportableMixin, FigureCanvas):
     def load(
         self, data: np.ndarray, projector: Callable | None = None
     ) -> tuple[str | None, str | None]:
+        self._finish_drag()
         # projector maps a (strided) complex array to a real one. Applying it
         # AFTER striding keeps a large complex memmap from fully materializing —
         # see core/complexproj. _data stays complex; _disp is the real display.
@@ -178,9 +186,10 @@ class ImageCanvas(ExportableMixin, FigureCanvas):
             # copy here would only cost 2-8x memory for nothing. Profile sampling
             # reads this array with output=float to stay correct on integer data.
             self._disp = np.asarray(sub)
+            # Sample scalar values first so a zoomed-out view maps fewer pixels to RGBA.
             self._im = self._ax.imshow(
-                self._disp, cmap=self._colormap,
-                origin="upper", interpolation="nearest", extent=extent,
+                self._disp, cmap=self._colormap, origin="upper", extent=extent,
+                interpolation="nearest", interpolation_stage="data",
             )
             self._fig.colorbar(self._im, ax=self._ax, fraction=0.046, pad=0.04)
 
@@ -268,6 +277,32 @@ class ImageCanvas(ExportableMixin, FigureCanvas):
         self._ep1.set_xdata([p1[0]])
         self._ep1.set_ydata([p1[1]])
 
+    def _set_cross_section_animated(self, animated: bool) -> None:
+        self._drag_background = None
+        for artist in (self._cs_line, self._ep0, self._ep1):
+            artist.set_animated(animated)
+
+    def _draw_cross_section_artists(self) -> None:
+        for artist in (self._cs_line, self._ep0, self._ep1):
+            self._ax.draw_artist(artist)
+
+    def _cache_drag_background(self, event) -> None:
+        # A full screen draw (including resize or zoom) omits animated artists.
+        # Save its clean pixels, then put the current cross-section back on top.
+        self._drag_background = None
+        if event.canvas.is_saving() or self._cs_line is None or not self._cs_line.get_animated():
+            return
+        self._drag_background = self.copy_from_bbox(self.figure.bbox)
+        self._draw_cross_section_artists()
+
+    def _redraw_cross_section(self) -> None:
+        if self._drag_background is None or self.figure.stale:
+            self.draw_idle()
+            return
+        self.restore_region(self._drag_background)
+        self._draw_cross_section_artists()
+        self.blit()
+
     # ------------------------------------------------------------------
     # Profile computation
     # ------------------------------------------------------------------
@@ -320,7 +355,7 @@ class ImageCanvas(ExportableMixin, FigureCanvas):
         if self._cs_line is not None:
             self._sync_artists()
         self._refresh_profile()
-        self.draw_idle()
+        self._redraw_cross_section()
 
     def profile_data(self) -> tuple | None:
         return self._last_profile
@@ -404,18 +439,20 @@ class ImageCanvas(ExportableMixin, FigureCanvas):
         if self._dragging is not None:
             if ev.inaxes is not self._ax:
                 return
+            self._begin_drag_rendering()
             x = t.clamp_x_physical(ev.xdata, w)
             y = t.clamp_y_physical(ev.ydata, h)
             self._endpoints[self._dragging] = [x, y]
             self._sync_artists()
             self._refresh_profile()
-            self.draw_idle()
+            self._redraw_cross_section()
             self._on_endpoints_changed(self)
             self.setCursor(Qt.CursorShape.ClosedHandCursor)
             self._on_status(self.status_str())
             return
 
         if self._pan_start is not None:
+            self._begin_drag_rendering()
             x0_px, y0_px, xlim0, ylim0, inv0 = self._pan_start
             p0 = inv0.transform([x0_px, y0_px])
             p1 = inv0.transform([ev.x, ev.y])
@@ -447,10 +484,42 @@ class ImageCanvas(ExportableMixin, FigureCanvas):
             self.unsetCursor()
             self._on_status(self.status_str())
 
+    def _begin_drag_rendering(self) -> None:
+        # Keep drawing data and ticks at the last settled axes positions.
+        if self._drag_layouts:
+            return
+        for canvas in self._drag_canvases:
+            if isinstance(canvas, ProfileCanvas) and self._dragging is None:
+                continue  # Panning leaves the profile unchanged.
+            engine = canvas.figure.get_layout_engine()
+            self._drag_layouts[canvas] = engine
+            if engine is not None:
+                canvas.figure.set_layout_engine("none")
+            if isinstance(canvas, ImageCanvas) and self._dragging is not None and canvas.supports_blit:
+                canvas._set_cross_section_animated(True)
+
+    def _finish_drag(self) -> None:
+        self._dragging = None
+        self._pan_start = None
+        for canvas, engine in self._drag_layouts.items():
+            if isinstance(canvas, ImageCanvas):
+                canvas._set_cross_section_animated(False)
+            if engine is not None:
+                canvas.figure.set_layout_engine(engine)
+            canvas.draw_idle()
+        self._drag_layouts.clear()
+
     def _on_release(self, ev) -> None:
         if ev.button == 1:
-            self._dragging = None
-            self._pan_start = None
+            self._finish_drag()
+
+    def event(self, ev: QEvent) -> bool:
+        # Qt may interrupt a drag without delivering a button release.
+        if ev.type() in (
+            QEvent.Type.Hide, QEvent.Type.WindowDeactivate, QEvent.Type.UngrabMouse,
+        ):
+            self._finish_drag()
+        return super().event(ev)
 
     def set_pixel_size(self, ps: float, unit: str) -> None:
         new_t = PixelTransform(ps, unit)
@@ -743,6 +812,9 @@ class ImageView(BaseView, SpatialView, ColormappedView):
         # The view owns the single profile (from the active panel) in complex
         # mode; detach the primary canvas's direct push so it can't clobber it.
         self._canvas._profile = None if on else self._profile
+        images = (self._canvas, self._canvas_b) if on else (self._canvas,)
+        for canvas in images:
+            canvas._drag_canvases = (*images, self._profile)
         self._clim_prefix_label.setVisible(on)
         if not on:
             self._profile.set_ylabel("Intensity")

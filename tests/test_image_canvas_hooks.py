@@ -3,11 +3,16 @@ dual-panel mode builds on: linked view, shared endpoints, projected load."""
 from __future__ import annotations
 
 import types
+from unittest.mock import Mock
 
 import numpy as np
+import pytest
+from matplotlib.backend_bases import MouseEvent
+from PySide6.QtCore import QEvent
+from PySide6.QtWidgets import QApplication
 
 from npyquick.core import limits
-from npyquick.views.image import ImageCanvas
+from npyquick.views.image import ImageCanvas, ImageView
 
 
 def _complex(h=10, w=10):
@@ -96,3 +101,50 @@ def test_load_without_projector_unchanged_for_real():
     norm, down = c.load(np.arange(12, dtype=np.float32).reshape(3, 4))
     assert not np.iscomplexobj(c._disp)
     assert c.profile_data() is not None
+
+
+@pytest.mark.parametrize("complex_image", [False, True])
+@pytest.mark.parametrize("endpoint", [False, True])
+def test_drag_defers_layout_only_for_redrawn_canvases(complex_image, endpoint, monkeypatch):
+    view = ImageView()
+    view.set_data(_complex() if complex_image else np.zeros((10, 10)))
+    source = view._canvas_b if complex_image else view._canvas
+    canvases = (view._canvas, view._canvas_b, view._profile)
+    engines = [c.figure.get_layout_engine() for c in canvases]
+    if not endpoint:
+        source._apply_view((2, 8), (8, 2))
+    xy = source.get_endpoints()[0] if endpoint else (5, 5)
+    x, y = source._ax.transData.transform(xy)
+
+    def send(name, x, y):
+        source.callbacks.process(name, MouseEvent(name, source, x, y, button=1))
+
+    send("button_press_event", x, y)
+    assert [c.figure.get_layout_engine() for c in canvases] == engines
+    send("motion_notify_event", x + 5, y + 5)
+    affected = (True, complex_image, endpoint)
+    for canvas, engine, paused in zip(canvases, engines, affected):
+        assert (canvas.figure.get_layout_engine() is not engine) == paused
+        monkeypatch.setattr(canvas, "draw_idle", Mock())
+    send("button_release_event", -10, -10)  # release outside the axes
+    for canvas, engine, paused in zip(canvases, engines, affected):
+        assert canvas.figure.get_layout_engine() is engine
+        assert canvas.draw_idle.call_count == int(paused)
+
+
+@pytest.mark.parametrize("interruption", ["reload", "deactivate"])
+def test_interrupted_drag_restores_layout(interruption):
+    c = ImageCanvas()
+    data = np.zeros((10, 10))
+    c.load(data)
+    engine = c.figure.get_layout_engine()
+    x, y = c._ax.transData.transform((5, 5))
+    for name, px in [("button_press_event", x), ("motion_notify_event", x + 5)]:
+        c.callbacks.process(name, MouseEvent(name, c, px, y, button=1))
+    assert c.figure.get_layout_engine() is not engine
+    if interruption == "reload":
+        c.load(data)
+    else:
+        QApplication.sendEvent(c, QEvent(QEvent.Type.WindowDeactivate))
+    assert c.figure.get_layout_engine() is engine
+    assert c._pan_start is None
