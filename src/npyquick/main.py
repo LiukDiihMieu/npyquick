@@ -25,7 +25,7 @@ def app_icon() -> QIcon:
     return QIcon(str(files("npyquick") / "resources" / "icon.ico"))
 
 
-def main() -> None:
+def main(*, github_release_updates: bool = False) -> None:
     parser = argparse.ArgumentParser(
         description="npyquick — a fast, lightweight viewer for NumPy arrays (.npy / .npz)"
     )
@@ -69,7 +69,7 @@ def main() -> None:
     # taskbar/dock icon. Must match the installed <id>.desktop basename.
     app.setDesktopFileName("io.github.liukdiihmieu.npyquick")
 
-    window = MainWindow()
+    window = MainWindow(github_release_updates=github_release_updates)
     window.show()
 
     if args.file:

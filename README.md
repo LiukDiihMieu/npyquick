@@ -86,6 +86,18 @@ pip install npyquick
 
 On Linux, `npyquick --install-desktop` then lets you open files by double-click ([details](#appimage-uv-pipx-or-pip-on-linux)). macOS has no such integration yet ([details](#macos)).
 
+### Updates
+
+The Windows installer and AppImage check GitHub for a new stable release in the
+background, at most once a day. When an update is available, click the version
+number in the status bar to open its GitHub release page. Choose **Help › Check
+for updates…** to see the result in a small dialog. You can turn off
+**Automatically check for updates** in the same menu.
+
+Snap updates through the Snap Store. For a Python installation, use the tool
+you installed with: `uv tool upgrade npyquick`, `pipx upgrade npyquick`, or
+`python -m pip install --upgrade npyquick` in the original environment.
+
 ## Usage
 
 ```bash

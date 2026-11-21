@@ -175,7 +175,7 @@ class DropOverlay(QWidget):
 
 
 class MainWindow(QMainWindow):
-    def __init__(self) -> None:
+    def __init__(self, *, github_release_updates: bool = False) -> None:
         super().__init__()
         self.setWindowTitle("npyquick")
         self.resize(1300, 700)
@@ -196,7 +196,7 @@ class MainWindow(QMainWindow):
         self.setStatusBar(self._sb)
 
         self._selected_export_target: ExportableMixin | None = None
-        self._build_menu()
+        self._build_menu(github_release_updates)
         self._build_central()
 
         # Tab switching. The sequences are platform-specific (see
@@ -217,7 +217,7 @@ class MainWindow(QMainWindow):
     # UI construction
     # ------------------------------------------------------------------
 
-    def _build_menu(self) -> None:
+    def _build_menu(self, github_release_updates: bool) -> None:
         fm = self.menuBar().addMenu("&File")
         self._file_menu = fm
         self._export_actions: list = []
@@ -318,6 +318,11 @@ class MainWindow(QMainWindow):
         self._refresh_colormap_icons()
 
         hm = self.menuBar().addMenu("&Help")
+        if github_release_updates:
+            from .updates import ReleaseUpdates
+
+            self._updates = ReleaseUpdates(self, hm, REPO_URL)
+            hm.addSeparator()
         about_a = QAction("&About npyquick", self)
         about_a.triggered.connect(self._show_about)
         hm.addAction(about_a)
