@@ -178,9 +178,10 @@ class ImageCanvas(ExportableMixin, FigureCanvas):
             # copy here would only cost 2-8x memory for nothing. Profile sampling
             # reads this array with output=float to stay correct on integer data.
             self._disp = np.asarray(sub)
+            # Sample scalar values first so a zoomed-out view maps fewer pixels to RGBA.
             self._im = self._ax.imshow(
-                self._disp, cmap=self._colormap,
-                origin="upper", interpolation="nearest", extent=extent,
+                self._disp, cmap=self._colormap, origin="upper", extent=extent,
+                interpolation="nearest", interpolation_stage="data",
             )
             self._fig.colorbar(self._im, ax=self._ax, fraction=0.046, pad=0.04)
 
