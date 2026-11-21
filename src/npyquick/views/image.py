@@ -7,7 +7,8 @@ from collections.abc import Callable
 import numpy as np
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
-from PySide6.QtCore import Qt, QSettings
+from matplotlib.layout_engine import LayoutEngine
+from PySide6.QtCore import QEvent, Qt, QSettings
 from PySide6.QtWidgets import (
     QHBoxLayout, QLabel, QLineEdit, QPushButton, QSizePolicy, QSplitter,
     QVBoxLayout, QWidget,
@@ -100,10 +101,14 @@ class ImageCanvas(ExportableMixin, FigureCanvas):
     panel_name = "Image"
 
     def __init__(self, profile: ProfileCanvas | None = None) -> None:
+        self._paused_layouts: dict[FigureCanvas, LayoutEngine] = {}
         self._fig = Figure(layout="compressed")
         super().__init__(self._fig)
         self._ax = self._fig.add_subplot(111)
         self._profile = profile
+        self._drag_canvases: tuple[FigureCanvas, ...] = (
+            (self, profile) if profile is not None else (self,)
+        )
         self._on_status: Callable = lambda _: None
         # Hooks for the complex dual-panel mode (no-ops in the single-canvas
         # real path, so ImageView behaves exactly as before). _on_view_changed
@@ -138,6 +143,7 @@ class ImageCanvas(ExportableMixin, FigureCanvas):
     def load(
         self, data: np.ndarray, projector: Callable | None = None
     ) -> tuple[str | None, str | None]:
+        self._finish_drag()
         # projector maps a (strided) complex array to a real one. Applying it
         # AFTER striding keeps a large complex memmap from fully materializing —
         # see core/complexproj. _data stays complex; _disp is the real display.
@@ -405,6 +411,7 @@ class ImageCanvas(ExportableMixin, FigureCanvas):
         if self._dragging is not None:
             if ev.inaxes is not self._ax:
                 return
+            self._pause_drag_layouts()
             x = t.clamp_x_physical(ev.xdata, w)
             y = t.clamp_y_physical(ev.ydata, h)
             self._endpoints[self._dragging] = [x, y]
@@ -417,6 +424,7 @@ class ImageCanvas(ExportableMixin, FigureCanvas):
             return
 
         if self._pan_start is not None:
+            self._pause_drag_layouts()
             x0_px, y0_px, xlim0, ylim0, inv0 = self._pan_start
             p0 = inv0.transform([x0_px, y0_px])
             p1 = inv0.transform([ev.x, ev.y])
@@ -448,10 +456,37 @@ class ImageCanvas(ExportableMixin, FigureCanvas):
             self.unsetCursor()
             self._on_status(self.status_str())
 
+    def _pause_drag_layouts(self) -> None:
+        # Keep drawing data and ticks at the last settled axes positions.
+        if self._paused_layouts:
+            return
+        for canvas in self._drag_canvases:
+            if isinstance(canvas, ProfileCanvas) and self._dragging is None:
+                continue  # Panning leaves the profile unchanged.
+            engine = canvas.figure.get_layout_engine()
+            if engine is not None:
+                canvas.figure.set_layout_engine("none")
+                self._paused_layouts[canvas] = engine
+
+    def _finish_drag(self) -> None:
+        self._dragging = None
+        self._pan_start = None
+        for canvas, engine in self._paused_layouts.items():
+            canvas.figure.set_layout_engine(engine)
+            canvas.draw_idle()
+        self._paused_layouts.clear()
+
     def _on_release(self, ev) -> None:
         if ev.button == 1:
-            self._dragging = None
-            self._pan_start = None
+            self._finish_drag()
+
+    def event(self, ev: QEvent) -> bool:
+        # Qt may interrupt a drag without delivering a button release.
+        if ev.type() in (
+            QEvent.Type.Hide, QEvent.Type.WindowDeactivate, QEvent.Type.UngrabMouse,
+        ):
+            self._finish_drag()
+        return super().event(ev)
 
     def set_pixel_size(self, ps: float, unit: str) -> None:
         new_t = PixelTransform(ps, unit)
@@ -744,6 +779,9 @@ class ImageView(BaseView, SpatialView, ColormappedView):
         # The view owns the single profile (from the active panel) in complex
         # mode; detach the primary canvas's direct push so it can't clobber it.
         self._canvas._profile = None if on else self._profile
+        images = (self._canvas, self._canvas_b) if on else (self._canvas,)
+        for canvas in images:
+            canvas._drag_canvases = (*images, self._profile)
         self._clim_prefix_label.setVisible(on)
         if not on:
             self._profile.set_ylabel("Intensity")
