@@ -3,4 +3,4 @@
 from npyquick.main import main
 
 if __name__ == "__main__":
-    main()
+    main(github_release_updates=True)

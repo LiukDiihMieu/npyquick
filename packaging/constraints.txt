@@ -24,6 +24,7 @@ numpy==2.5.4
     #   scipy
 packaging==26.3
     # via
+    #   npyquick (pyproject.toml)
     #   matplotlib
     #   pyinstaller
     #   pyinstaller-hooks-contrib
