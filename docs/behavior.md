@@ -89,9 +89,13 @@ The Image view supports:
 * draggable cross-section endpoints
 * live intensity profile along the selected cross-section line
 
-Use the **Line profile** button in the toolbar on the left of the image to show the line and its profile together. It starts off on first use and remembers your choice across restarts. Switching it off gives the full plot area back to the image. Switching it on again for the same array restores the endpoints and the panel width.
+The left toolbar offers **Line profile** and **Rectangle ROI**. Click the active tool again to return to panning. The first launch starts in pan mode, and subsequent launches restore the last tool.
 
-The cross-section is intended as a quick inspection tool, not as a replacement for full quantitative analysis scripts.
+**Line profile** shows the line and its profile together. Switching it off gives the full plot area back to the image. Switching it on again for the same array restores the endpoints and the panel width.
+
+**Rectangle ROI** measures a rectangular region of interest. Drag to draw, drag inside to move the box, or drag a corner to resize. Dragging outside the box replaces it. The box snaps to the original pixel grid. Its dimensions appear below the image in pixels and, when calibrated, in physical units. Releasing the mouse adds the mean, population standard deviation, minimum and maximum of the original values, including on downsampled previews. Large selections are measured in the background.
+
+RGB images show separate R, G and B measurements. Complex panels share one box and show the active component's measurements. Angle reports all four values in radians. It uses circular statistics for the mean and standard deviation and takes the minimum and maximum directly from the wrapped angles. Zero-magnitude pixels have no phase and are excluded from all four Angle measurements. A vanishing mean resultant has an undefined mean and infinite circular standard deviation. Non-finite samples are excluded, with the valid count shown when samples are omitted. Switching tools preserves the box for the current array. Loading another array clears it.
 
 ## Histogram view
 

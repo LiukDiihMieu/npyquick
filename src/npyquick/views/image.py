@@ -9,7 +9,7 @@ from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from matplotlib.layout_engine import LayoutEngine
 from PySide6.QtCore import QEvent, QSettings, QSize, Qt, Signal
-from PySide6.QtGui import QAction, QIcon, QPainter, QPalette, QPen, QPixmap
+from PySide6.QtGui import QAction, QActionGroup, QIcon, QPainter, QPalette, QPen, QPixmap
 from PySide6.QtWidgets import (
     QHBoxLayout, QLabel, QLineEdit, QPushButton, QSizePolicy, QSplitter,
     QToolBar, QVBoxLayout, QWidget,
@@ -23,6 +23,7 @@ from .base import (
     BaseView, CautionLabel, ColormappedView, ErrorLabel, ExportableMixin,
     SpatialView,
 )
+from .roi import RectangleOverlay, RoiReadout
 
 
 class ProfileCanvas(ExportableMixin, FigureCanvas):
@@ -104,10 +105,12 @@ class ProfileCanvas(ExportableMixin, FigureCanvas):
 class ImageCanvas(ExportableMixin, FigureCanvas):
     _HIT_RADIUS = 12
     panel_name = "Image"
+    roi_changed = Signal(object, bool)
 
     def __init__(self, profile: ProfileCanvas | None = None) -> None:
         self._drag_layouts: dict[FigureCanvas, LayoutEngine | None] = {}
         self._drag_background = None
+        self.roi = RectangleOverlay()
         self._fig = Figure(layout="compressed")
         super().__init__(self._fig)
         self._ax = self._fig.add_subplot(111)
@@ -148,9 +151,10 @@ class ImageCanvas(ExportableMixin, FigureCanvas):
     def set_on_status(self, cb: Callable) -> None:
         self._on_status = cb
 
-    def set_profile_enabled(self, enabled: bool) -> None:
-        self._finish_drag()
-        self._profile_enabled = enabled
+    def set_tool(self, tool: str) -> None:
+        self._profile_enabled = tool == "profile"
+        self.roi.enabled = tool == "roi"
+        self.roi.update(self.roi.bounds, self._transform.pixel_size)
         self._last_profile = None
         self.unsetCursor()
         if self._cs_line is not None:
@@ -159,7 +163,7 @@ class ImageCanvas(ExportableMixin, FigureCanvas):
                 self.draw_idle()
 
     def load(
-        self, data: np.ndarray, projector: Callable | None = None
+        self, data: np.ndarray, projector: Callable | None = None, *, endpoints=None
     ) -> tuple[str | None, str | None]:
         self._finish_drag()
         # projector maps a (strided) complex array to a real one. Applying it
@@ -213,15 +217,18 @@ class ImageCanvas(ExportableMixin, FigureCanvas):
         self._ax.set_xlabel(u)
         self._ax.set_ylabel(u)
         ps = self._transform.pixel_size
-        self._endpoints = np.array(
-            [[w * 0.1 * ps, h * 0.5 * ps], [w * 0.9 * ps, h * 0.5 * ps]],
-            dtype=float,
-        )
+        if endpoints is None:
+            endpoints = [[w * 0.1 * ps, h * 0.5 * ps], [w * 0.9 * ps, h * 0.5 * ps]]
+        self._endpoints = np.array(endpoints, dtype=float, copy=True)
         self._cs_line = self._ep0 = self._ep1 = None
         self._hover = None
         self._init_artists()
+        self.roi.attach(self._ax)
+        self.roi.update(self.roi.bounds, ps)
         self._refresh_profile()
-        self.draw()
+        # A collapsed splitter pane gets its first draw with its next Qt resize.
+        if self.width() > 0 and self.height() > 0:
+            self.draw()
         return norm_str, downsample_str
 
     @staticmethod
@@ -298,30 +305,35 @@ class ImageCanvas(ExportableMixin, FigureCanvas):
         self._ep1.set_xdata([p1[0]])
         self._ep1.set_ydata([p1[1]])
 
-    def _set_cross_section_animated(self, animated: bool) -> None:
+    def _overlay_artists(self):
+        if self.roi.enabled:
+            return (self.roi.artist,)
+        return (self._cs_line, self._ep0, self._ep1)
+
+    def _set_overlay_animated(self, animated: bool) -> None:
         self._drag_background = None
-        for artist in (self._cs_line, self._ep0, self._ep1):
+        for artist in self._overlay_artists():
             artist.set_animated(animated)
 
-    def _draw_cross_section_artists(self) -> None:
-        for artist in (self._cs_line, self._ep0, self._ep1):
+    def _draw_overlay_artists(self) -> None:
+        for artist in self._overlay_artists():
             self._ax.draw_artist(artist)
 
     def _cache_drag_background(self, event) -> None:
         # A full screen draw (including resize or zoom) omits animated artists.
-        # Save its clean pixels, then put the current cross-section back on top.
+        # Save its clean pixels, then put the active tool's overlay back on top.
         self._drag_background = None
-        if event.canvas.is_saving() or self._cs_line is None or not self._cs_line.get_animated():
+        if event.canvas.is_saving() or self._cs_line is None or not self._overlay_artists()[0].get_animated():
             return
         self._drag_background = self.copy_from_bbox(self.figure.bbox)
-        self._draw_cross_section_artists()
+        self._draw_overlay_artists()
 
-    def _redraw_cross_section(self) -> None:
+    def _redraw_overlay(self) -> None:
         if self._drag_background is None or self.figure.stale:
             self.draw_idle()
             return
         self.restore_region(self._drag_background)
-        self._draw_cross_section_artists()
+        self._draw_overlay_artists()
         self.blit()
 
     # ------------------------------------------------------------------
@@ -376,7 +388,12 @@ class ImageCanvas(ExportableMixin, FigureCanvas):
         if self._cs_line is not None:
             self._sync_artists()
         self._refresh_profile()
-        self._redraw_cross_section()
+        self._redraw_overlay()
+
+    def set_roi(self, bounds) -> None:
+        self.roi.update(bounds, self._transform.pixel_size)
+        if self.roi.enabled and self.roi.artist is not None and not self.isHidden():
+            self._redraw_overlay()
 
     def profile_data(self) -> tuple | None:
         return self._last_profile
@@ -434,6 +451,8 @@ class ImageCanvas(ExportableMixin, FigureCanvas):
         if ev.button == 1:
             if ev.dblclick:
                 self._reset_zoom()
+            elif self.roi.enabled:
+                self.roi.press(ev, self._transform, self._data.shape)
             else:
                 self._dragging = self._hit(ev.xdata, ev.ydata)
                 if self._dragging is None:
@@ -459,6 +478,14 @@ class ImageCanvas(ExportableMixin, FigureCanvas):
         else:
             self._hover = None
 
+        if self.roi.enabled:
+            if self.roi.drag:
+                self._drag_roi(ev)
+            if ev.inaxes is self._ax:
+                self.setCursor(self.roi.cursor(ev))
+            self._on_status(self.status_str())
+            return
+
         if self._dragging is not None:
             if ev.inaxes is not self._ax:
                 return
@@ -468,7 +495,7 @@ class ImageCanvas(ExportableMixin, FigureCanvas):
             self._endpoints[self._dragging] = [x, y]
             self._sync_artists()
             self._refresh_profile()
-            self._redraw_cross_section()
+            self._redraw_overlay()
             self._on_endpoints_changed(self)
             self.setCursor(Qt.CursorShape.ClosedHandCursor)
             self._on_status(self.status_str())
@@ -507,6 +534,12 @@ class ImageCanvas(ExportableMixin, FigureCanvas):
             self.unsetCursor()
             self._on_status(self.status_str())
 
+    def _drag_roi(self, ev) -> None:
+        bounds = self.roi.dragged_bounds(ev, self._transform, self._data.shape)
+        if bounds != self.roi.bounds:
+            self._begin_drag_rendering()
+            self.roi_changed.emit(bounds, False)
+
     def _begin_drag_rendering(self) -> None:
         # Keep drawing data and ticks at the last settled axes positions.
         if self._drag_layouts:
@@ -518,22 +551,29 @@ class ImageCanvas(ExportableMixin, FigureCanvas):
             self._drag_layouts[canvas] = engine
             if engine is not None:
                 canvas.figure.set_layout_engine("none")
-            if isinstance(canvas, ImageCanvas) and self._dragging is not None and canvas.supports_blit:
-                canvas._set_cross_section_animated(True)
+            if isinstance(canvas, ImageCanvas) and canvas.supports_blit:
+                if self._dragging is not None or self.roi.drag:
+                    canvas._set_overlay_animated(True)
 
     def _finish_drag(self) -> None:
+        roi_drag = self.roi.drag
+        self.roi.drag = None
         self._dragging = None
         self._pan_start = None
         for canvas, engine in self._drag_layouts.items():
             if isinstance(canvas, ImageCanvas):
-                canvas._set_cross_section_animated(False)
+                canvas._set_overlay_animated(False)
             if engine is not None:
                 canvas.figure.set_layout_engine(engine)
             canvas.draw_idle()
         self._drag_layouts.clear()
+        if roi_drag and roi_drag.moved:
+            self.roi_changed.emit(self.roi.bounds, True)
 
     def _on_release(self, ev) -> None:
         if ev.button == 1:
+            if self.roi.drag:
+                self._drag_roi(ev)
             self._finish_drag()
 
     def event(self, ev: QEvent) -> bool:
@@ -563,6 +603,7 @@ class ImageCanvas(ExportableMixin, FigureCanvas):
         self._ax.set_ylabel(u)
         self._reset_zoom()
         self._sync_artists()
+        self.roi.update(self.roi.bounds, ps)
         self._refresh_profile()
         self.draw_idle()
 
@@ -620,6 +661,10 @@ class ImageView(BaseView, SpatialView, ColormappedView):
             lambda c: self._complex and self._canvas.set_view(*c.get_view()))
         self._canvas.set_on_endpoints_changed(self._on_endpoints_dragged)
         self._canvas_b.set_on_endpoints_changed(self._on_endpoints_dragged)
+        for canvas in (self._canvas, self._canvas_b):
+            canvas.roi_changed.connect(self._set_roi)
+            canvas.set_on_selected(self._on_canvas_clicked)
+        self._roi_readout = RoiReadout()
 
         # Inner splitter holds the two image panels; the outer splitter pairs
         # that with the profile. Keeping the outer two-pane splitter lets the
@@ -627,8 +672,6 @@ class ImageView(BaseView, SpatialView, ColormappedView):
         self._panels = QSplitter(Qt.Horizontal)
         self._panels.addWidget(self._canvas)
         self._panels.addWidget(self._canvas_b)
-        _ps = self._settings.value("image_panels_splitter")
-        self._panels.setSizes([int(x) for x in _ps] if _ps else [480, 480])
         self._panels.splitterMoved.connect(
             lambda *_: self._settings.setValue(
                 "image_panels_splitter", self._panels.sizes()
@@ -652,16 +695,14 @@ class ImageView(BaseView, SpatialView, ColormappedView):
         toolbar.setIconSize(QSize(20, 20))
         toolbar.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Expanding)
         self._profile_action = QAction("Line profile", self, checkable=True)
-        self._update_profile_icon()
-        toolbar.addAction(self._profile_action)
-        toolbar.widgetForAction(self._profile_action).setFocusPolicy(Qt.StrongFocus)
-        enabled = self._settings.value("image_profile_enabled", False, type=bool)
-        self._profile_action.setChecked(enabled)
-        self._set_profile_enabled(enabled)
-        self._profile_action.toggled.connect(self._set_profile_enabled)
-        self._profile_action.toggled.connect(
-            lambda on: self._settings.setValue("image_profile_enabled", on)
-        )
+        self._roi_action = QAction("Rectangle ROI", self, checkable=True)
+        self._update_tool_icons()
+        group = QActionGroup(toolbar)
+        group.setExclusionPolicy(QActionGroup.ExclusionPolicy.ExclusiveOptional)
+        for action in (self._profile_action, self._roi_action):
+            group.addAction(action)
+            toolbar.addAction(action)
+            toolbar.widgetForAction(action).setFocusPolicy(Qt.StrongFocus)
 
         self._vmin_edit = QLineEdit()
         self._vmax_edit = QLineEdit()
@@ -713,8 +754,18 @@ class ImageView(BaseView, SpatialView, ColormappedView):
         plot_row.addWidget(toolbar)
         plot_row.addWidget(self._profile_splitter, 1)
         layout.addLayout(plot_row, 1)
+        layout.addWidget(self._roi_readout)
 
-    def _update_profile_icon(self) -> None:
+        legacy = self._settings.value("image_profile_enabled", False, type=bool)
+        tool = self._settings.value("image_tool", "profile" if legacy else "none")
+        self._profile_action.setChecked(tool == "profile")
+        self._roi_action.setChecked(tool == "roi")
+        self._tool = None
+        self._apply_tool()
+        for action in group.actions():
+            action.toggled.connect(self._on_tool_changed)
+
+    def _update_tool_icons(self) -> None:
         # Draw at high resolution so the small line and endpoint handles stay
         # crisp on high-DPI displays. Use the native toolbar text color.
         color = self.palette().color(QPalette.ColorRole.ButtonText)
@@ -729,17 +780,39 @@ class ImageView(BaseView, SpatialView, ColormappedView):
             painter.drawEllipse(5, 43, 14, 14)
             painter.drawEllipse(45, 7, 14, 14)
         self._profile_action.setIcon(QIcon(pixmap))
+        pixmap.fill(Qt.transparent)
+        with QPainter(pixmap) as painter:
+            painter.setRenderHint(QPainter.Antialiasing)
+            pen = QPen(color, 4, Qt.DashLine)
+            pen.setDashPattern([1.7, 1.3])
+            painter.setPen(pen)
+            painter.drawRect(7, 12, 50, 40)
+        self._roi_action.setIcon(QIcon(pixmap))
 
     def changeEvent(self, event) -> None:
         super().changeEvent(event)
-        if event.type() == QEvent.PaletteChange and hasattr(self, "_profile_action"):
-            self._update_profile_icon()
+        if event.type() == QEvent.PaletteChange and hasattr(self, "_roi_action"):
+            self._update_tool_icons()
 
-    def _set_profile_enabled(self, enabled: bool) -> None:
+    def _on_tool_changed(self) -> None:
+        self._apply_tool()
+        self._settings.setValue("image_tool", self._tool)
+
+    def _apply_tool(self) -> None:
+        profile = self._profile_action.isChecked()
+        roi = self._roi_action.isChecked()
+        tool = "profile" if profile else "roi" if roi else "none"
+        if tool == self._tool:
+            return
+        self._tool = tool
+        # A drag may be animating both complex panels. Finish it while both
+        # canvases still refer to the old tool's artists.
         for canvas in (self._canvas, self._canvas_b):
-            canvas.set_profile_enabled(enabled)
-        self._profile.setVisible(enabled)
-        if enabled:
+            canvas._finish_drag()
+        for canvas in (self._canvas, self._canvas_b):
+            canvas.set_tool(tool)
+        self._profile.setVisible(profile)
+        if profile:
             sizes = [int(x) for x in self._settings.value("image_profile_splitter", [])]
             # Older versions allowed either side to be dragged fully closed.
             if len(sizes) != 2 or min(sizes) <= 0:
@@ -751,7 +824,19 @@ class ImageView(BaseView, SpatialView, ColormappedView):
                 self._refresh_profile_from_active()
         else:
             self.export_target_hidden.emit(self._profile)
+        self._refresh_roi()
+        self._roi_readout.setVisible(roi)
         self.refresh_status()
+
+    def _set_roi(self, bounds, finished: bool) -> None:
+        self._canvas.set_roi(bounds)
+        self._canvas_b.set_roi(bounds)
+        self._refresh_roi(finished)
+
+    def _refresh_roi(self, finished: bool = True) -> None:
+        bounds = self._canvas.roi.bounds if self._roi_action.isChecked() else None
+        component = self._active_component_name() if self._complex else None
+        self._roi_readout.set_region(self._array, bounds, component, finished)
 
     @classmethod
     def can_handle(cls, array: np.ndarray) -> bool:
@@ -764,6 +849,8 @@ class ImageView(BaseView, SpatialView, ColormappedView):
         return False
 
     def set_data(self, array: np.ndarray, stats: ArrayStats | None = None) -> None:
+        self._active._finish_drag()
+        self._set_roi(None, False)
         self._array = array
         self._vmin_edit.clear()
         self._vmax_edit.clear()
@@ -804,6 +891,7 @@ class ImageView(BaseView, SpatialView, ColormappedView):
 
     def set_pixel_size(self, ps: float, unit: str) -> None:
         self._canvas.set_pixel_size(ps, unit)
+        self._roi_readout.set_scale(self._canvas._transform)
         if self._complex:
             self._canvas_b.set_pixel_size(ps, unit)
             self._profile.set_pixel_size(ps, unit)
@@ -822,8 +910,6 @@ class ImageView(BaseView, SpatialView, ColormappedView):
         # A click both sets the export target (existing behavior) and marks the
         # active panel — one mechanism via _on_canvas_clicked.
         self._app_selected_cb = cb
-        self._canvas.set_on_selected(self._on_canvas_clicked)
-        self._canvas_b.set_on_selected(self._on_canvas_clicked)
         self._profile.set_on_selected(cb)
 
     def refresh_status(self) -> None:
@@ -894,8 +980,12 @@ class ImageView(BaseView, SpatialView, ColormappedView):
         self._downsample_label.setVisible(bool(s))
 
     def _set_complex_mode(self, on: bool) -> None:
+        opening = on and not self._complex
         self._complex = on
         self._canvas_b.setVisible(on)
+        if opening:
+            sizes = self._settings.value("image_panels_splitter", [480, 480])
+            self._panels.setSizes([int(x) for x in sizes])
         # The view owns the single profile (from the active panel) in complex
         # mode; detach the primary canvas's direct push so it can't clobber it.
         self._canvas._profile = None if on else self._profile
@@ -906,18 +996,21 @@ class ImageView(BaseView, SpatialView, ColormappedView):
         if not on:
             self._profile.set_ylabel("Intensity")
 
-    def _load_complex_panels(self) -> None:
+    def _load_complex_panels(self, endpoints=None) -> None:
         arr = self._array
         a, b = self._comp_a, self._comp_b
-        _, ds = self._canvas.load(arr, lambda s: complexproj.project(s, a))
-        self._canvas_b.load(arr, lambda s: complexproj.project(s, b))
+        scale = self._canvas._transform
+        self._canvas_b.set_pixel_size(scale.pixel_size, scale.unit)
+        _, ds = self._canvas.load(arr, lambda s: complexproj.project(s, a), endpoints=endpoints)
+        self._canvas_b.load(arr, lambda s: complexproj.project(s, b),
+                            endpoints=self._canvas.get_endpoints())
         for canvas, comp in ((self._canvas, a), (self._canvas_b, b)):
             if comp == "Angle":
                 canvas.set_clim(-np.pi, np.pi)
-        self._canvas_b.set_endpoints(self._canvas.get_endpoints())
         self._show_downsample(ds)
         self._refresh_profile_from_active()
         self._sync_clim_controls()
+        self._refresh_roi()
 
     def set_pair(self, pair_key: str) -> None:
         if pair_key not in complexproj.IMAGE_PAIRS:
@@ -927,7 +1020,9 @@ class ImageView(BaseView, SpatialView, ColormappedView):
         self._pair = pair_key
         self._comp_a, self._comp_b = complexproj.IMAGE_PAIRS[pair_key]
         if self._complex and self._array is not None:
-            self._load_complex_panels()
+            zoom = self._canvas.get_view()
+            self._load_complex_panels(self._canvas.get_endpoints())
+            self._canvas._apply_view(*zoom)
 
     def _on_endpoints_dragged(self, canvas: ImageCanvas) -> None:
         if not self._complex:
@@ -937,10 +1032,13 @@ class ImageView(BaseView, SpatialView, ColormappedView):
         self._refresh_profile_from_active()
 
     def _set_active(self, canvas: ImageCanvas) -> None:
+        changed = self._active is not canvas
         self._active = canvas
         if self._complex:
             self._refresh_profile_from_active()
             self._sync_clim_controls()
+            if changed and self._roi_action.isChecked():
+                self._refresh_roi()
 
     def _on_canvas_clicked(self, canvas: ImageCanvas) -> None:
         self._set_active(canvas)
