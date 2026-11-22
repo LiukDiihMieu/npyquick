@@ -8,10 +8,11 @@ import numpy as np
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from matplotlib.layout_engine import LayoutEngine
-from PySide6.QtCore import QEvent, Qt, QSettings
+from PySide6.QtCore import QEvent, QSettings, QSize, Qt, Signal
+from PySide6.QtGui import QAction, QIcon, QPainter, QPalette, QPen, QPixmap
 from PySide6.QtWidgets import (
     QHBoxLayout, QLabel, QLineEdit, QPushButton, QSizePolicy, QSplitter,
-    QVBoxLayout, QWidget,
+    QToolBar, QVBoxLayout, QWidget,
 )
 
 from ..core import complexproj, limits
@@ -48,9 +49,12 @@ class ProfileCanvas(ExportableMixin, FigureCanvas):
     def set_ylabel(self, label: str) -> None:
         # Complex mode labels the profile with the active component
         # ("Real"/"Imag"/"Abs"/"Angle") instead of the generic "Intensity".
+        if self._ylabel == label:
+            return
         self._ylabel = label
         self._ax.set_ylabel(label)
-        self.draw_idle()
+        if not self.isHidden():
+            self.draw_idle()
 
     def set_pixel_size(self, ps: float, unit: str) -> None:
         new_t = PixelTransform(ps, unit)
@@ -59,7 +63,8 @@ class ProfileCanvas(ExportableMixin, FigureCanvas):
         self._transform = new_t
         u = new_t.format_unit()
         self._ax.set_xlabel(f"Distance ({u})" if u else "Distance")
-        self.draw_idle()
+        if not self.isHidden():
+            self.draw_idle()
 
     def set_profile(self, distances: np.ndarray, values: np.ndarray) -> None:
         # values: shape (N,) for grayscale, (C, N) for RGB
@@ -107,6 +112,7 @@ class ImageCanvas(ExportableMixin, FigureCanvas):
         super().__init__(self._fig)
         self._ax = self._fig.add_subplot(111)
         self._profile = profile
+        self._profile_enabled = True
         self._drag_canvases: tuple[FigureCanvas, ...] = (
             (self, profile) if profile is not None else (self,)
         )
@@ -141,6 +147,16 @@ class ImageCanvas(ExportableMixin, FigureCanvas):
 
     def set_on_status(self, cb: Callable) -> None:
         self._on_status = cb
+
+    def set_profile_enabled(self, enabled: bool) -> None:
+        self._finish_drag()
+        self._profile_enabled = enabled
+        self._last_profile = None
+        self.unsetCursor()
+        if self._cs_line is not None:
+            self._update_profile_visibility()
+            if not self.isHidden():
+                self.draw_idle()
 
     def load(
         self, data: np.ndarray, projector: Callable | None = None
@@ -251,7 +267,7 @@ class ImageCanvas(ExportableMixin, FigureCanvas):
                 parts.append(f"{coord}  val={v.real:.4g}{v.imag:+.4g}j")
             else:
                 parts.append(f"{coord}  val={self._data[y, x]:.4g}")
-        if self._data is not None:
+        if self._profile_enabled and self._data is not None:
             p0, p1 = self._endpoints
             parts.append(f"EP1({p0[0]:.4g}, {p0[1]:.4g}) → EP2({p1[0]:.4g}, {p1[1]:.4g})")
         return "  |  ".join(parts)
@@ -267,6 +283,11 @@ class ImageCanvas(ExportableMixin, FigureCanvas):
         )
         (self._ep0,) = self._ax.plot([p0[0]], [p0[1]], "o", color="cyan", ms=9, zorder=6)
         (self._ep1,) = self._ax.plot([p1[0]], [p1[1]], "o", color="magenta", ms=9, zorder=6)
+        self._update_profile_visibility()
+
+    def _update_profile_visibility(self) -> None:
+        for artist in (self._cs_line, self._ep0, self._ep1):
+            artist.set_visible(self._profile_enabled)
 
     def _sync_artists(self) -> None:
         p0, p1 = self._endpoints
@@ -308,7 +329,7 @@ class ImageCanvas(ExportableMixin, FigureCanvas):
     # ------------------------------------------------------------------
 
     def _refresh_profile(self) -> None:
-        if self._disp is None:
+        if not self._profile_enabled or self._disp is None:
             return
         # Sample the (float, possibly downsampled) display array: endpoint pixel
         # coords are in full resolution, so divide by the stride to reach the
@@ -365,6 +386,8 @@ class ImageCanvas(ExportableMixin, FigureCanvas):
     # ------------------------------------------------------------------
 
     def _hit(self, xd: float, yd: float) -> int | None:
+        if not self._profile_enabled:
+            return None
         click = self._ax.transData.transform([xd, yd])
         for i, ep in enumerate(self._endpoints):
             if np.hypot(*(click - self._ax.transData.transform(ep))) < self._HIT_RADIUS:
@@ -572,9 +595,11 @@ class ImageCanvas(ExportableMixin, FigureCanvas):
 class ImageView(BaseView, SpatialView, ColormappedView):
     VIEW_ID = "image"
     VIEW_NAME = "Image"
+    export_target_hidden = Signal(object)
 
     def __init__(self) -> None:
         super().__init__()
+        self._settings = QSettings("npyquick", "npyquick")
         self._on_clim_change: Callable = lambda vmin, vmax: None
         self._app_selected_cb: Callable = lambda _: None
         self._array: np.ndarray | None = None
@@ -602,23 +627,40 @@ class ImageView(BaseView, SpatialView, ColormappedView):
         self._panels = QSplitter(Qt.Horizontal)
         self._panels.addWidget(self._canvas)
         self._panels.addWidget(self._canvas_b)
-        _ps = QSettings("npyquick", "npyquick").value("image_panels_splitter")
+        _ps = self._settings.value("image_panels_splitter")
         self._panels.setSizes([int(x) for x in _ps] if _ps else [480, 480])
         self._panels.splitterMoved.connect(
-            lambda *_: QSettings("npyquick", "npyquick").setValue(
+            lambda *_: self._settings.setValue(
                 "image_panels_splitter", self._panels.sizes()
             )
         )
 
-        sp = QSplitter(Qt.Horizontal)
-        sp.addWidget(self._panels)
-        sp.addWidget(self._profile)
-        _saved = QSettings("npyquick", "npyquick").value("image_profile_splitter")
-        sp.setSizes([int(x) for x in _saved] if _saved else [780, 480])
-        sp.splitterMoved.connect(
-            lambda pos, idx: QSettings("npyquick", "npyquick").setValue(
-                "image_profile_splitter", sp.sizes()
+        self._profile_splitter = QSplitter(Qt.Horizontal)
+        self._profile_splitter.setChildrenCollapsible(False)
+        self._profile_splitter.addWidget(self._panels)
+        self._profile_splitter.addWidget(self._profile)
+        self._profile_splitter.splitterMoved.connect(
+            lambda *_: self._settings.setValue(
+                "image_profile_splitter", self._profile_splitter.sizes()
             )
+        )
+
+        toolbar = QToolBar("Image tools", self)
+        toolbar.setOrientation(Qt.Vertical)
+        toolbar.setMovable(False)
+        toolbar.setToolButtonStyle(Qt.ToolButtonIconOnly)
+        toolbar.setIconSize(QSize(20, 20))
+        toolbar.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Expanding)
+        self._profile_action = QAction("Line profile", self, checkable=True)
+        self._update_profile_icon()
+        toolbar.addAction(self._profile_action)
+        toolbar.widgetForAction(self._profile_action).setFocusPolicy(Qt.StrongFocus)
+        enabled = self._settings.value("image_profile_enabled", False, type=bool)
+        self._profile_action.setChecked(enabled)
+        self._set_profile_enabled(enabled)
+        self._profile_action.toggled.connect(self._set_profile_enabled)
+        self._profile_action.toggled.connect(
+            lambda on: self._settings.setValue("image_profile_enabled", on)
         )
 
         self._vmin_edit = QLineEdit()
@@ -666,7 +708,50 @@ class ImageView(BaseView, SpatialView, ColormappedView):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
         layout.addWidget(ctrl)
-        layout.addWidget(sp, 1)
+        plot_row = QHBoxLayout()
+        plot_row.setSpacing(0)
+        plot_row.addWidget(toolbar)
+        plot_row.addWidget(self._profile_splitter, 1)
+        layout.addLayout(plot_row, 1)
+
+    def _update_profile_icon(self) -> None:
+        # Draw at high resolution so the small line and endpoint handles stay
+        # crisp on high-DPI displays. Use the native toolbar text color.
+        color = self.palette().color(QPalette.ColorRole.ButtonText)
+        pixmap = QPixmap(64, 64)
+        pixmap.fill(Qt.transparent)
+        with QPainter(pixmap) as painter:
+            painter.setRenderHint(QPainter.Antialiasing)
+            painter.setPen(QPen(color, 5))
+            painter.drawLine(12, 50, 52, 14)
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(color)
+            painter.drawEllipse(5, 43, 14, 14)
+            painter.drawEllipse(45, 7, 14, 14)
+        self._profile_action.setIcon(QIcon(pixmap))
+
+    def changeEvent(self, event) -> None:
+        super().changeEvent(event)
+        if event.type() == QEvent.PaletteChange and hasattr(self, "_profile_action"):
+            self._update_profile_icon()
+
+    def _set_profile_enabled(self, enabled: bool) -> None:
+        for canvas in (self._canvas, self._canvas_b):
+            canvas.set_profile_enabled(enabled)
+        self._profile.setVisible(enabled)
+        if enabled:
+            sizes = [int(x) for x in self._settings.value("image_profile_splitter", [])]
+            # Older versions allowed either side to be dragged fully closed.
+            if len(sizes) != 2 or min(sizes) <= 0:
+                sizes = [780, 480]
+            self._profile_splitter.setSizes(sizes)
+            self._canvas._refresh_profile()
+            if self._complex:
+                self._canvas_b._refresh_profile()
+                self._refresh_profile_from_active()
+        else:
+            self.export_target_hidden.emit(self._profile)
+        self.refresh_status()
 
     @classmethod
     def can_handle(cls, array: np.ndarray) -> bool:
@@ -746,11 +831,13 @@ class ImageView(BaseView, SpatialView, ColormappedView):
 
     def export_targets(self):
         if self._complex:
-            return [(self._comp_a, self._canvas.export_figure),
-                    (self._comp_b, self._canvas_b.export_figure),
-                    ("Profile", self._profile.export_figure)]
-        return [("Image", self._canvas.export_figure),
-                ("Profile", self._profile.export_figure)]
+            targets = [(self._comp_a, self._canvas.export_figure),
+                       (self._comp_b, self._canvas_b.export_figure)]
+        else:
+            targets = [("Image", self._canvas.export_figure)]
+        if self._profile_action.isChecked():
+            targets.append(("Profile", self._profile.export_figure))
+        return targets
 
     def set_on_clim_change(self, cb: Callable) -> None:
         self._on_clim_change = cb

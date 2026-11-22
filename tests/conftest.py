@@ -7,7 +7,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import numpy as np
 import pytest
-from PySide6.QtCore import QStandardPaths
+from PySide6.QtCore import QSettings, QStandardPaths
 from PySide6.QtWidgets import QApplication
 
 
@@ -28,7 +28,22 @@ def qapp():
 
 
 @pytest.fixture
-def main_window():
+def image_settings(tmp_path, monkeypatch):
+    settings = QSettings(str(tmp_path / "image.ini"), QSettings.IniFormat)
+    monkeypatch.setattr("npyquick.views.image.QSettings", lambda *args: settings)
+    return settings
+
+
+@pytest.fixture
+def profile_view(image_settings):
+    from npyquick.views.image import ImageView
+    view = ImageView()
+    view._profile_action.setChecked(True)
+    return view
+
+
+@pytest.fixture
+def main_window(image_settings):
     """A fresh MainWindow, shown (focus-based tests require an active window)
     and closed at teardown."""
     from npyquick.app import MainWindow

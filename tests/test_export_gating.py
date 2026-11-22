@@ -115,11 +115,24 @@ def test_selected_target_drives_copy(main_window, write_npy, monkeypatch):
 
 def test_export_targets_expose_public_export_figure(main_window, write_npy):
     main_window.load_file(write_npy(np.arange(64, dtype=np.float32).reshape(8, 8)))
+    main_window._image_view._profile_action.setChecked(True)
     targets = main_window._image_view.export_targets()
     names = [n for n, _ in targets]
     assert names == ["Image", "Profile"]
     for _, fn in targets:
         assert fn.__name__ == "export_figure"
+
+
+def test_hiding_profile_clears_only_a_selected_profile(main_window, write_npy):
+    main_window.load_file(write_npy(np.zeros((12, 12))))
+    view = main_window._image_view
+    for selected in (view._canvas, view._profile):
+        view._profile_action.trigger()
+        selected._on_selected(selected)
+        view._profile_action.trigger()
+        expected = None if selected is view._profile else view._canvas
+        assert main_window._selected_export_target is expected
+        assert [name for name, _ in view.export_targets()] == ["Image"]
 
 
 def test_set_on_selected_marks_export_target(main_window, write_npy):

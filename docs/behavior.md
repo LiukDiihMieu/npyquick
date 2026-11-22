@@ -89,6 +89,8 @@ The Image view supports:
 * draggable cross-section endpoints
 * live intensity profile along the selected cross-section line
 
+Use the **Line profile** button in the toolbar on the left of the image to show the line and its profile together. It starts off on first use and remembers your choice across restarts. Switching it off gives the full plot area back to the image. Switching it on again for the same array restores the endpoints and the panel width.
+
 The cross-section is intended as a quick inspection tool, not as a replacement for full quantitative analysis scripts.
 
 ## Histogram view

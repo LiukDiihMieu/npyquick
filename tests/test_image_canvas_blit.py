@@ -7,7 +7,7 @@ from matplotlib.backend_bases import MouseEvent
 from PySide6.QtCore import QEvent
 from PySide6.QtWidgets import QApplication
 
-from npyquick.views.image import ImageCanvas, ImageView
+from npyquick.views.image import ImageCanvas
 
 
 def mouse(canvas, name, xy):
@@ -24,8 +24,8 @@ def assert_matches_full_render(canvas):
 
 
 @pytest.mark.parametrize("complex_image", [False, True])
-def test_endpoint_blit_matches_full_render_and_updates_profile(complex_image, qapp, monkeypatch):
-    view = ImageView()
+def test_endpoint_blit_matches_full_render_and_updates_profile(complex_image, qapp, monkeypatch, profile_view):
+    view = profile_view
     data = np.arange(1024).reshape(32, 32)
     view.set_data(data + 2j * data if complex_image else data)
     view.resize(1000, 650)

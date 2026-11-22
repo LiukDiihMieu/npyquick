@@ -352,6 +352,7 @@ class MainWindow(QMainWindow):
         for v in self._views:
             v.set_on_status(self._sb.showMessage)
             v.set_on_canvas_selected(self.set_selected_export_target)
+        self._image_view.export_target_hidden.connect(self._on_export_target_hidden)
         self._image_view.set_on_clim_change(self._histogram_view.update_clim_marker)
         # Reverse direction: dragging a marker on the histogram drives the
         # image clim live (a silent sink — the two paths never chain).
@@ -828,6 +829,10 @@ class MainWindow(QMainWindow):
 
     def _reset_selected_export_target(self) -> None:
         self._selected_export_target = None
+
+    def _on_export_target_hidden(self, canvas: ExportableMixin) -> None:
+        if self._selected_export_target is canvas:
+            self._reset_selected_export_target()
 
     def _grey_selected_actions(self) -> None:
         has_target = self._selected_export_target is not None

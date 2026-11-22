@@ -54,8 +54,8 @@ def test_set_pair_flips_components_and_phase_clim():
     assert iv._canvas._disp.min() >= 0.0
 
 
-def test_click_switches_active_profile_label_and_clim_prefix():
-    iv = ImageView()
+def test_click_switches_active_profile_label_and_clim_prefix(profile_view):
+    iv = profile_view
     iv.set_data(_complex())
     assert iv._active is iv._canvas
     assert iv._profile._ylabel == "Real"
@@ -119,8 +119,8 @@ def test_complex_anomaly_count_shown():
     assert iv._anomaly_label.text() == "NaN: 1  +Inf: 1  -Inf: 1"
 
 
-def test_export_targets_labels_for_complex():
-    iv = ImageView()
+def test_export_targets_labels_for_complex(profile_view):
+    iv = profile_view
     iv.set_data(_complex())
     names = [n for n, _ in iv.export_targets()]
     assert names == ["Real", "Imag", "Profile"]
