@@ -50,7 +50,7 @@ def region_stats(channel: np.ndarray, component: str | None = None,
     count = 0
     minimum, maximum = np.inf, -np.inf
     mean = m2 = np.longdouble(0)
-    cosine = sine = 0.0
+    circular = component == "Angle"
     origin = 0
     blocks = np.nditer(channel, flags=["external_loop", "buffered", "zerosize_ok"],
                        op_flags=["readonly"], order="K", buffersize=BLOCK_VALUES)
@@ -58,7 +58,7 @@ def region_stats(channel: np.ndarray, component: str | None = None,
         if cancelled():
             raise InterruptedError
         valid = np.isfinite(block)
-        if component == "Angle":
+        if circular:
             valid &= block != 0  # A zero-magnitude value has no phase.
         values = block[valid]
         n = values.size
@@ -67,34 +67,42 @@ def region_stats(channel: np.ndarray, component: str | None = None,
         if component:
             dtype = np.promote_types(values.dtype, np.complex128)
             values = complexproj.project(values.astype(dtype, copy=False), component)
-        minimum = min(minimum, values.min().item())
+        block_min = values.min()
+        minimum = min(minimum, block_min.item())
         maximum = max(maximum, values.max().item())
-        if component == "Angle":
-            cosine += np.cos(values).sum(dtype=np.float64)
-            sine += np.sin(values).sum(dtype=np.float64)
+        if values.dtype.kind in "iu" and values.itemsize == 8:
+            # Keep 1-count differences even on platforms with a 64-bit long
+            # double. Differences from the block minimum fit in a uint64.
+            if not count:
+                origin = block_min.item()
+            offsets = values.astype(np.uint64, copy=False) - block_min.astype(np.uint64)
+            values = offsets.astype(np.longdouble) + np.longdouble(block_min.item() - origin)
         else:
-            values = values.astype(np.longdouble)
+            values = np.exp(1j * values) if circular else values.astype(np.longdouble)
             if not count:
                 origin = values[0]
             values -= origin
-            # Merge block variances around their local means. Subtracting the
-            # first value preserves small fluctuations on a large DC offset.
-            local_mean = values.mean()
-            values -= local_mean
-            delta = local_mean - mean
-            m2 += np.square(values).sum() + delta * delta * (count * n / (count + n))
-            mean += delta * (n / (count + n))
+        # Merge block variances around their local means. A shared origin
+        # preserves small fluctuations on a large DC offset.
+        local_mean = values.mean()
+        values -= local_mean
+        delta = local_mean - mean
+        m2 += (np.abs(values) ** 2).sum() + abs(delta) ** 2 * (count * n / (count + n))
+        mean += delta * (n / (count + n))
         count += n
     if not count:
         return RegionStats(0, None, None, None, None)
-    if component == "Angle":
-        resultant = min(1.0, np.hypot(cosine, sine) / count)
+    mean += origin
+    variance = m2 / count
+    if circular:
+        resultant = abs(mean)
         if resultant <= 8 * np.finfo(float).eps:
             mean, std = None, np.inf
         else:
-            mean = np.arctan2(sine, cosine)
-            std = np.sqrt(max(0.0, -2 * np.log(resultant)))
+            mean = np.angle(mean)
+            # On the unit circle, variance = 1 - resultant**2. Use the
+            # variance directly when a tight phase cluster rounds resultant to 1.
+            std = np.sqrt(-np.log1p(-variance) if variance < 0.5 else -2 * np.log(resultant))
     else:
-        mean += origin
-        std = np.sqrt(m2 / count)
+        std = np.sqrt(variance)
     return RegionStats(count, mean, std, minimum, maximum)

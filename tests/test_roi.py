@@ -40,10 +40,24 @@ def test_phase_wrap_and_undefined_phase():
     assert "Min -3.0416   Max 3.0416  (rad)" in text
 
 
-def test_readout_shows_full_integer_extrema():
+def test_large_integer_measurements_with_double_precision(monkeypatch):
+    monkeypatch.setattr(roi, "BLOCK_VALUES", 1)
+    monkeypatch.setattr(roi.np, "longdouble", np.float64)
     data = np.array([[2**63 + 1, 2**63 + 2]], dtype=np.uint64)
     text = roi_widgets._measure(data, None, Event())
-    assert "Min 9223372036854775809   Max 9223372036854775810" in text
+    assert "Std 0.5   Min 9223372036854775809   Max 9223372036854775810" in text
+    assert region_stats(np.array([-2**63, -2**63 + 1])).std == 0.5
+
+
+def test_circular_std_resolves_tightly_clustered_phases(monkeypatch):
+    monkeypatch.setattr(roi, "BLOCK_VALUES", 3)
+    phase = 0.7
+    spread = 1e-9
+    phases = np.tile([phase - spread, phase + spread], 5)
+    stats = region_stats(np.exp(1j * phases), "Angle")
+    assert stats.mean == pytest.approx(phase)
+    assert stats.std == pytest.approx(spread, rel=1e-6, abs=0)
+    assert region_stats(np.full(10, 3 + 4j), "Angle").std == 0
 
 
 def mouse(canvas, event, xy):
@@ -129,7 +143,7 @@ def test_tools_restore_and_complex_panels_share_region(image_settings, qapp):
     view._roi_action.trigger()
     assert a.roi.artist.get_visible() and a.roi.bounds == rect
     view._roi_action.trigger()
-    assert not a.roi.enabled and not view._profile_action.isChecked()
+    assert not a.roi.artist.get_visible() and not view._profile_action.isChecked()
     assert image_settings.value("image_tool") == "none"
     view.close()
 

@@ -115,7 +115,7 @@ class ImageCanvas(ExportableMixin, FigureCanvas):
         super().__init__(self._fig)
         self._ax = self._fig.add_subplot(111)
         self._profile = profile
-        self._profile_enabled = True
+        self._tool = "profile"
         self._drag_canvases: tuple[FigureCanvas, ...] = (
             (self, profile) if profile is not None else (self,)
         )
@@ -152,15 +152,12 @@ class ImageCanvas(ExportableMixin, FigureCanvas):
         self._on_status = cb
 
     def set_tool(self, tool: str) -> None:
-        self._profile_enabled = tool == "profile"
-        self.roi.enabled = tool == "roi"
-        self.roi.update(self.roi.bounds, self._transform.pixel_size)
+        self._tool = tool
+        self._sync_tool_visibility()
         self._last_profile = None
         self.unsetCursor()
-        if self._cs_line is not None:
-            self._update_profile_visibility()
-            if not self.isHidden():
-                self.draw_idle()
+        if self._data is not None and not self.isHidden():
+            self.draw_idle()
 
     def load(
         self, data: np.ndarray, projector: Callable | None = None, *, endpoints=None
@@ -222,9 +219,9 @@ class ImageCanvas(ExportableMixin, FigureCanvas):
         self._endpoints = np.array(endpoints, dtype=float, copy=True)
         self._cs_line = self._ep0 = self._ep1 = None
         self._hover = None
-        self._init_artists()
+        self._init_profile_artists()
         self.roi.attach(self._ax)
-        self.roi.update(self.roi.bounds, ps)
+        self._sync_tool_visibility()
         self._refresh_profile()
         # A collapsed splitter pane gets its first draw with its next Qt resize.
         if self.width() > 0 and self.height() > 0:
@@ -274,7 +271,7 @@ class ImageCanvas(ExportableMixin, FigureCanvas):
                 parts.append(f"{coord}  val={v.real:.4g}{v.imag:+.4g}j")
             else:
                 parts.append(f"{coord}  val={self._data[y, x]:.4g}")
-        if self._profile_enabled and self._data is not None:
+        if self._tool == "profile" and self._data is not None:
             p0, p1 = self._endpoints
             parts.append(f"EP1({p0[0]:.4g}, {p0[1]:.4g}) → EP2({p1[0]:.4g}, {p1[1]:.4g})")
         return "  |  ".join(parts)
@@ -283,20 +280,23 @@ class ImageCanvas(ExportableMixin, FigureCanvas):
     # Artists
     # ------------------------------------------------------------------
 
-    def _init_artists(self) -> None:
+    def _init_profile_artists(self) -> None:
         p0, p1 = self._endpoints
         (self._cs_line,) = self._ax.plot(
             [p0[0], p1[0]], [p0[1], p1[1]], color="yellow", lw=1.5, zorder=5
         )
         (self._ep0,) = self._ax.plot([p0[0]], [p0[1]], "o", color="cyan", ms=9, zorder=6)
         (self._ep1,) = self._ax.plot([p1[0]], [p1[1]], "o", color="magenta", ms=9, zorder=6)
-        self._update_profile_visibility()
 
-    def _update_profile_visibility(self) -> None:
-        for artist in (self._cs_line, self._ep0, self._ep1):
-            artist.set_visible(self._profile_enabled)
+    def _profile_artists(self):
+        return () if self._cs_line is None else (self._cs_line, self._ep0, self._ep1)
 
-    def _sync_artists(self) -> None:
+    def _sync_tool_visibility(self) -> None:
+        for artist in self._profile_artists():
+            artist.set_visible(self._tool == "profile")
+        self.roi.sync_artist(self._transform.pixel_size, active=self._tool == "roi")
+
+    def _sync_profile_artists(self) -> None:
         p0, p1 = self._endpoints
         self._cs_line.set_xdata([p0[0], p1[0]])
         self._cs_line.set_ydata([p0[1], p1[1]])
@@ -306,9 +306,11 @@ class ImageCanvas(ExportableMixin, FigureCanvas):
         self._ep1.set_ydata([p1[1]])
 
     def _overlay_artists(self):
-        if self.roi.enabled:
+        if self._tool == "profile":
+            return self._profile_artists()
+        if self._tool == "roi" and self.roi.artist is not None:
             return (self.roi.artist,)
-        return (self._cs_line, self._ep0, self._ep1)
+        return ()
 
     def _set_overlay_animated(self, animated: bool) -> None:
         self._drag_background = None
@@ -323,7 +325,8 @@ class ImageCanvas(ExportableMixin, FigureCanvas):
         # A full screen draw (including resize or zoom) omits animated artists.
         # Save its clean pixels, then put the active tool's overlay back on top.
         self._drag_background = None
-        if event.canvas.is_saving() or self._cs_line is None or not self._overlay_artists()[0].get_animated():
+        artists = self._overlay_artists()
+        if event.canvas.is_saving() or not artists or not artists[0].get_animated():
             return
         self._drag_background = self.copy_from_bbox(self.figure.bbox)
         self._draw_overlay_artists()
@@ -341,7 +344,7 @@ class ImageCanvas(ExportableMixin, FigureCanvas):
     # ------------------------------------------------------------------
 
     def _refresh_profile(self) -> None:
-        if not self._profile_enabled or self._disp is None:
+        if self._tool != "profile" or self._disp is None:
             return
         # Sample the (float, possibly downsampled) display array: endpoint pixel
         # coords are in full resolution, so divide by the stride to reach the
@@ -386,13 +389,18 @@ class ImageCanvas(ExportableMixin, FigureCanvas):
         # Silent: mirror an owner-supplied cross-section without firing back.
         self._endpoints = np.asarray(eps, dtype=float).copy()
         if self._cs_line is not None:
-            self._sync_artists()
+            self._sync_profile_artists()
         self._refresh_profile()
         self._redraw_overlay()
 
     def set_roi(self, bounds) -> None:
-        self.roi.update(bounds, self._transform.pixel_size)
-        if self.roi.enabled and self.roi.artist is not None and not self.isHidden():
+        if bounds == self.roi.bounds:
+            return
+        self.roi.bounds = bounds
+        if self._tool != "roi" or self.roi.artist is None:
+            return
+        self.roi.sync_artist(self._transform.pixel_size, active=True)
+        if not self.isHidden():
             self._redraw_overlay()
 
     def profile_data(self) -> tuple | None:
@@ -403,7 +411,7 @@ class ImageCanvas(ExportableMixin, FigureCanvas):
     # ------------------------------------------------------------------
 
     def _hit(self, xd: float, yd: float) -> int | None:
-        if not self._profile_enabled:
+        if self._tool != "profile":
             return None
         click = self._ax.transData.transform([xd, yd])
         for i, ep in enumerate(self._endpoints):
@@ -451,7 +459,7 @@ class ImageCanvas(ExportableMixin, FigureCanvas):
         if ev.button == 1:
             if ev.dblclick:
                 self._reset_zoom()
-            elif self.roi.enabled:
+            elif self._tool == "roi":
                 self.roi.press(ev, self._transform, self._data.shape)
             else:
                 self._dragging = self._hit(ev.xdata, ev.ydata)
@@ -470,15 +478,11 @@ class ImageCanvas(ExportableMixin, FigureCanvas):
         t = self._transform
         h, w = self._data.shape[:2]
         if ev.inaxes is self._ax:
-            xp, yp = t.to_pixel([ev.xdata, ev.ydata])
-            self._hover = (
-                int(round(np.clip(xp, 0, w - 1))),
-                int(round(np.clip(yp, 0, h - 1))),
-            )
+            self._hover = t.pixel_index((ev.xdata, ev.ydata), self._data.shape)
         else:
             self._hover = None
 
-        if self.roi.enabled:
+        if self._tool == "roi":
             if self.roi.drag:
                 self._drag_roi(ev)
             if ev.inaxes is self._ax:
@@ -493,7 +497,7 @@ class ImageCanvas(ExportableMixin, FigureCanvas):
             x = t.clamp_x_physical(ev.xdata, w)
             y = t.clamp_y_physical(ev.ydata, h)
             self._endpoints[self._dragging] = [x, y]
-            self._sync_artists()
+            self._sync_profile_artists()
             self._refresh_profile()
             self._redraw_overlay()
             self._on_endpoints_changed(self)
@@ -602,8 +606,8 @@ class ImageCanvas(ExportableMixin, FigureCanvas):
         self._ax.set_xlabel(u)
         self._ax.set_ylabel(u)
         self._reset_zoom()
-        self._sync_artists()
-        self.roi.update(self.roi.bounds, ps)
+        self._sync_profile_artists()
+        self._sync_tool_visibility()
         self._refresh_profile()
         self.draw_idle()
 
@@ -659,9 +663,8 @@ class ImageView(BaseView, SpatialView, ColormappedView):
             lambda c: self._complex and self._canvas_b.set_view(*c.get_view()))
         self._canvas_b.set_on_view_changed(
             lambda c: self._complex and self._canvas.set_view(*c.get_view()))
-        self._canvas.set_on_endpoints_changed(self._on_endpoints_dragged)
-        self._canvas_b.set_on_endpoints_changed(self._on_endpoints_dragged)
         for canvas in (self._canvas, self._canvas_b):
+            canvas.set_on_endpoints_changed(self._on_endpoints_dragged)
             canvas.roi_changed.connect(self._set_roi)
             canvas.set_on_selected(self._on_canvas_clicked)
         self._roi_readout = RoiReadout()
@@ -834,7 +837,7 @@ class ImageView(BaseView, SpatialView, ColormappedView):
         self._refresh_roi(finished)
 
     def _refresh_roi(self, finished: bool = True) -> None:
-        bounds = self._canvas.roi.bounds if self._roi_action.isChecked() else None
+        bounds = self._canvas.roi.bounds if self._tool == "roi" else None
         component = self._active_component_name() if self._complex else None
         self._roi_readout.set_region(self._array, bounds, component, finished)
 
@@ -921,7 +924,7 @@ class ImageView(BaseView, SpatialView, ColormappedView):
                        (self._comp_b, self._canvas_b.export_figure)]
         else:
             targets = [("Image", self._canvas.export_figure)]
-        if self._profile_action.isChecked():
+        if self._tool == "profile":
             targets.append(("Profile", self._profile.export_figure))
         return targets
 
@@ -1037,7 +1040,7 @@ class ImageView(BaseView, SpatialView, ColormappedView):
         if self._complex:
             self._refresh_profile_from_active()
             self._sync_clim_controls()
-            if changed and self._roi_action.isChecked():
+            if changed and self._tool == "roi":
                 self._refresh_roi()
 
     def _on_canvas_clicked(self, canvas: ImageCanvas) -> None:

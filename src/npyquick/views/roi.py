@@ -30,7 +30,6 @@ class RectangleOverlay:
         self.bounds: PixelRect | None = None
         self.drag: _Drag | None = None
         self.artist: Line2D | None = None
-        self.enabled = False
 
     def attach(self, ax) -> None:
         self.artist = Line2D([], [], color="white", linestyle="--", gapcolor="#282828",
@@ -38,13 +37,12 @@ class RectangleOverlay:
                              markeredgecolor="#282828", zorder=7, visible=False)
         ax.add_artist(self.artist)  # An overlay must not change the data limits.
 
-    def update(self, bounds: PixelRect | None, scale: float) -> None:
-        self.bounds = bounds
+    def sync_artist(self, scale: float, *, active: bool) -> None:
         if self.artist is None:
             return
-        self.artist.set_visible(self.enabled and bounds is not None)
-        if bounds is not None and self.enabled:
-            x0, y0, x1, y1 = (np.asarray(bounds) - 0.5) * scale
+        self.artist.set_visible(active and self.bounds is not None)
+        if active and self.bounds is not None:
+            x0, y0, x1, y1 = (np.asarray(self.bounds) - 0.5) * scale
             self.artist.set_data((x0, x1, x1, x0, x0), (y0, y0, y1, y1, y0))
 
     def _handle(self, ev) -> str:
@@ -78,9 +76,7 @@ class RectangleOverlay:
             xy = ev.xdata, ev.ydata
         else:
             xy = self.artist.axes.transData.inverted().transform((ev.x, ev.y))
-        x, y = np.floor(transform.to_pixel(xy) + 0.5)
-        h, w = shape[:2]
-        return int(np.clip(x, 0, w - 1)), int(np.clip(y, 0, h - 1))
+        return transform.pixel_index(xy, shape)
 
     def press(self, ev, transform, shape) -> None:
         self.drag = _Drag(self._pixel(ev, transform, shape), (ev.x, ev.y),

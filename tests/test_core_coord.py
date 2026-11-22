@@ -36,6 +36,14 @@ def test_to_pixel_and_back_roundtrip():
     np.testing.assert_allclose(t.to_physical(pixel), physical)
 
 
+def test_pixel_index_uses_half_open_pixels_and_clamps_at_the_edges():
+    t = PixelTransform(pixel_size=2.0, unit="μm")
+    shape = (3, 5, 3)
+    assert t.pixel_index((0.99, 2.99), shape) == (0, 1)
+    assert t.pixel_index((1.0, 3.0), shape) == (1, 2)
+    assert t.pixel_index((20.0, -5.0), shape) == (4, 0)
+
+
 def test_clamp_x_physical_clamps_to_extent():
     t = PixelTransform(pixel_size=2.0, unit="μm")
     # x bounds for w=10: [-1.0, 19.0]
