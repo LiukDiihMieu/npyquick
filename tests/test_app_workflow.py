@@ -140,6 +140,7 @@ def _export_actions_with_label(main_window):
 
 def test_export_menu_uses_submenu_for_2d_image(main_window, write_npy):
     main_window.load_file(write_npy(np.zeros((8, 8), dtype=np.float32)))
+    main_window._image_view._profile_action.setChecked(True)
     main_window._rebuild_export_menu()
 
     with_menus = [a for a in main_window._export_actions if a.menu() is not None]
@@ -163,6 +164,7 @@ def test_export_menu_rebuilds_when_array_type_changes(main_window, write_npy):
     line = np.arange(20, dtype=np.float32)
 
     main_window.load_file(write_npy(img, name="img1.npy"))
+    main_window._image_view._profile_action.setChecked(True)
     main_window._rebuild_export_menu()
     assert any(a.menu() is not None for a in main_window._export_actions)
 

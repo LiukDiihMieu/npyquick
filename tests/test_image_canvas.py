@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from matplotlib.backend_bases import MouseEvent
+from PySide6.QtWidgets import QToolBar
 
+from npyquick.core.profile import compute_profile
 from npyquick.views.image import ImageCanvas, ImageView, ProfileCanvas
 
 
@@ -64,12 +67,79 @@ def test_image_view_handles_rgb():
     assert not iv._apply_btn.isEnabled()
 
 
-def test_hover_over_endpoint_hints_drag_else_shows_readout():
+def test_toolbar_toggle_restores_line_zoom_width_and_preference(image_settings, qapp):
+    # A splitter collapsed in a previous release should reopen at a usable width.
+    image_settings.setValue("image_profile_splitter", [800, 0])
+    view = ImageView()
+    view.resize(900, 480)
+    view.show()
+    view.set_data(np.arange(1024).reshape(32, 32))
+    qapp.processEvents()
+    canvas = view._canvas
+    button = view.findChild(QToolBar).widgetForAction(view._profile_action)
+    assert view._profile.isHidden() and not button.isChecked()
+    assert canvas.profile_data() is None
+    assert all(not a.get_visible() for a in (canvas._cs_line, canvas._ep0, canvas._ep1))
+    x, y = canvas._ax.transData.transform(canvas.get_endpoints()[0])
+    canvas.callbacks.process("button_press_event", MouseEvent("button_press_event", canvas, x, y, button=1))
+    assert canvas._dragging is None and canvas._pan_start is not None
+    assert "EP1" not in canvas.status_str()
+    canvas._finish_drag()
+
+    button.click()
+    qapp.processEvents()
+    assert view._profile.isVisible() and view._profile.width() > 100
+    assert all(a.get_visible() for a in (canvas._cs_line, canvas._ep0, canvas._ep1))
+    endpoints = [[5, 7], [24, 17]]
+    canvas.set_endpoints(endpoints)
+    canvas.set_view((2, 27), (23, 3))
+    view._profile_splitter.moveSplitter(455, 1)
+    sizes = view._profile_splitter.sizes()
+    assert ImageView()._profile_action.isChecked()
+
+    for _ in range(2):
+        button.click()
+        qapp.processEvents()
+    np.testing.assert_array_equal(canvas.get_endpoints(), endpoints)
+    assert canvas.get_view() == ((2, 27), (23, 3))
+    assert view._profile_splitter.sizes() == sizes
+    button.click()
+    assert not ImageView()._profile_action.isChecked()
+    view.close()
+
+
+def test_disabled_profile_skips_sampling_and_reopens_on_current_data(image_settings, monkeypatch):
+    view = ImageView()
+    y, x = np.mgrid[:16, :20]
+    with monkeypatch.context() as m:
+        def unexpected_sample(*args):
+            pytest.fail("Profile sampled while the tool was off")
+
+        m.setattr("npyquick.views.image.compute_profile", unexpected_sample)
+        view.set_data(x)
+        view.set_data(x + 1j * y)
+        view.set_pixel_size(2, "mm")
+        view._on_canvas_clicked(view._canvas_b)
+    view._profile_action.trigger()
+    a, b = view._canvas, view._canvas_b
+    np.testing.assert_array_equal(a.get_endpoints(), b.get_endpoints())
+    distances, values = compute_profile(y, *(b.get_endpoints() / 2))
+    line = view._profile._lines[0]
+    np.testing.assert_allclose(line.get_xdata(), distances * 2)
+    np.testing.assert_allclose(line.get_ydata(), values)
+    assert view._profile._ylabel == "Imag"
+    view._profile_action.trigger()
+    view.set_data(np.ones((8, 12, 3), dtype=np.uint8))
+    view._profile_action.trigger()
+    assert len(view._profile._lines) == 3
+
+
+def test_hover_over_endpoint_hints_drag_else_shows_readout(profile_view):
     """Resting on a cross-section endpoint hints 'drag'; elsewhere the live
     pixel readout is left untouched so value-scanning is undisturbed."""
     from types import SimpleNamespace
 
-    iv = ImageView()
+    iv = profile_view
     iv.set_data(np.arange(100, dtype=float).reshape(10, 10))
     canvas = iv._canvas
     seen = []

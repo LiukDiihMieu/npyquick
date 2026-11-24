@@ -27,6 +27,12 @@ class PixelTransform:
         """Convert physical coord(s) to pixel coord(s)."""
         return np.asarray(physical) / self.pixel_size
 
+    def pixel_index(self, physical, shape) -> tuple[int, int]:
+        """Return the containing pixel (x, y), clamped at the image edges."""
+        x, y = np.floor(self.to_pixel(physical) + 0.5)
+        h, w = shape[:2]
+        return int(np.clip(x, 0, w - 1)), int(np.clip(y, 0, h - 1))
+
     def to_physical(self, pixel):
         """Convert pixel coord(s) to physical coord(s)."""
         return np.asarray(pixel) * self.pixel_size

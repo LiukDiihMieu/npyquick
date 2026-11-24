@@ -12,7 +12,7 @@ from PySide6.QtCore import QEvent
 from PySide6.QtWidgets import QApplication
 
 from npyquick.core import limits
-from npyquick.views.image import ImageCanvas, ImageView
+from npyquick.views.image import ImageCanvas
 
 
 def _complex(h=10, w=10):
@@ -105,8 +105,8 @@ def test_load_without_projector_unchanged_for_real():
 
 @pytest.mark.parametrize("complex_image", [False, True])
 @pytest.mark.parametrize("endpoint", [False, True])
-def test_drag_defers_layout_only_for_redrawn_canvases(complex_image, endpoint, monkeypatch):
-    view = ImageView()
+def test_drag_defers_layout_only_for_redrawn_canvases(complex_image, endpoint, monkeypatch, profile_view):
+    view = profile_view
     view.set_data(_complex() if complex_image else np.zeros((10, 10)))
     source = view._canvas_b if complex_image else view._canvas
     canvases = (view._canvas, view._canvas_b, view._profile)

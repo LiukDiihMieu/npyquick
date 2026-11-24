@@ -81,15 +81,15 @@ The two panels share a single zoom/pan and a single cross-section line, so they 
 
 ### Image interactions
 
-The Image view supports:
+Scroll to zoom and double-click to reset the view. The left toolbar offers **Line profile** and **Rectangle ROI**. Click the active tool again to return to panning with the left mouse button. The first launch starts in pan mode, and subsequent launches restore the last tool.
 
-* scroll to zoom
-* left-drag to pan
-* double-click to reset zoom
-* draggable cross-section endpoints
-* live intensity profile along the selected cross-section line
+**Line profile** shows the line and its profile together. Drag either endpoint to update the curve, or drag elsewhere to pan. Switching the tool off gives the full plot area back to the image. Switching it on again for the same array restores the endpoints and the panel width.
 
-The cross-section is intended as a quick inspection tool, not as a replacement for full quantitative analysis scripts.
+**Rectangle ROI** measures a rectangular region of interest. Drag to draw, drag inside to move the box, or drag a corner to resize. Dragging outside the box replaces it. The box snaps to the original pixel grid. Its dimensions appear below the image in pixels and, when calibrated, in physical units. Releasing the mouse adds the mean, population standard deviation, minimum and maximum of the original values, including on downsampled previews. Large selections are measured in the background.
+
+RGB images show separate R, G and B measurements. Complex panels share one box and show the active component's measurements. Angle reports all four values in radians. It uses circular statistics for the mean and standard deviation and takes the minimum and maximum directly from the wrapped angles. Zero-magnitude pixels have no phase and are excluded from all four Angle measurements. A vanishing mean resultant has an undefined mean and infinite circular standard deviation. Non-finite samples are excluded, with the valid count shown when samples are omitted. Switching tools preserves the box for the current array. Loading another array clears it.
+
+Copying or saving an image panel includes the visible line or rectangle. The profile curve can be copied or saved as a separate figure while its panel is visible. ROI statistics appear below the figure in the application.
 
 ## Histogram view
 
